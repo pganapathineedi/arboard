@@ -80,7 +80,7 @@ const AGENT_META: Record<string, {
   "sf-apex":       { icon: "⚙️",  color: "#e84040", badge: "APEX EXPERT",    estSeconds: 40, shortName: "Apex"       },
   "sf-patterns":   { icon: "📐", color: "#0fba7a", badge: "PATTERNS",        estSeconds: 35, shortName: "Patterns"   },
   "sf-judge":      { icon: "⚖️",  color: "#f0a020", badge: "JUDGE",          estSeconds: 45, shortName: "Judge"      },
-  "sf-scribe":     { icon: "📝", color: "#5a6a8a", badge: "SCRIBE",          estSeconds: 20, shortName: "Scribe"     },
+  "sf-scribe":     { icon: "📝", color: "#7B8DB0", badge: "SCRIBE",          estSeconds: 20, shortName: "Scribe"     },
   "sf-learner":    { icon: "🎓", color: "#9f70f5", badge: "LEARNER",         estSeconds: 18, shortName: "Learner"    },
 };
 
@@ -91,7 +91,7 @@ const RISK_SEVERITY_COLOR: Record<string, string> = {
 const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
   required:    { bg: "rgba(232,64,64,0.12)",   text: "#e84040" },
   recommended: { bg: "rgba(240,160,32,0.12)",  text: "#f0a020" },
-  optional:    { bg: "rgba(90,106,138,0.12)",  text: "#5a6a8a" },
+  optional:    { bg: "rgba(90,106,138,0.12)",  text: "#7B8DB0" },
 };
 
 const FORMAT_LABELS: Record<string, string> = {
@@ -201,7 +201,7 @@ const S = {
     fontFamily: "monospace",
     fontSize: 10,
     letterSpacing: 1.2,
-    color: "#5a6a8a",
+    color: "#7B8DB0",
     textTransform: "uppercase" as const,
   } as React.CSSProperties,
   mono: {
@@ -211,7 +211,7 @@ const S = {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function Chip({ label, color = "#5a6a8a" }: { label: string; color?: string }) {
+function Chip({ label, color = "#7B8DB0" }: { label: string; color?: string }) {
   return (
     <span style={{
       fontFamily: "monospace", fontSize: 11,
@@ -248,7 +248,7 @@ function SectionDivider({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 16px" }}>
       <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-      <span style={{ ...S.label, fontSize: 11, color: "#5a6a8a" }}>{label}</span>
+      <span style={{ ...S.label, fontSize: 11, color: "#7B8DB0" }}>{label}</span>
       <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
     </div>
   );
@@ -278,14 +278,14 @@ function EstimatePanel(p: EstimatePanelProps) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 12 }}>
         <div>
           <div style={{ ...S.label, marginBottom: 4 }}>Active Agents</div>
-          <div style={{ fontFamily: "monospace", fontSize: 20, color: "#dde2f0", fontWeight: 700 }}>{p.agentCount}</div>
+          <div style={{ fontFamily: "monospace", fontSize: 20, color: "#F0F4FF", fontWeight: 700 }}>{p.agentCount}</div>
         </div>
         <div>
           <div style={{ ...S.label, marginBottom: 4 }}>Est. Tokens</div>
-          <div style={{ fontFamily: "monospace", fontSize: 16, color: "#dde2f0", fontWeight: 700 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 16, color: "#F0F4FF", fontWeight: 700 }}>
             ~{(p.totalTokens / 1000).toFixed(0)}k
           </div>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
             {(p.minTokens / 1000).toFixed(0)}k–{(p.maxTokens / 1000).toFixed(0)}k range
           </div>
         </div>
@@ -294,7 +294,7 @@ function EstimatePanel(p: EstimatePanelProps) {
           <div style={{ fontFamily: "monospace", fontSize: 16, color: "#00c8f0", fontWeight: 700 }}>
             ~{formatCost(p.cost)}
           </div>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
             {formatCost(p.minCost)}–{formatCost(p.maxCost)}
           </div>
         </div>
@@ -336,8 +336,8 @@ function ModelDropdown({
         }}
       >
         <span>{cfg.icon}</span>
-        <span style={{ fontFamily: "monospace", fontSize: 12, color: "#dde2f0" }}>{cfg.label}</span>
-        <span style={{ color: "#5a6a8a", fontSize: 10, marginLeft: 2 }}>▾</span>
+        <span style={{ fontFamily: "monospace", fontSize: 12, color: "#F0F4FF" }}>{cfg.label}</span>
+        <span style={{ color: "#7B8DB0", fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
 
       {open && !disabled && (
@@ -370,12 +370,12 @@ function ModelDropdown({
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
                     <span>{c.icon}</span>
-                    <span style={{ fontFamily: "monospace", fontSize: 12, color: "#dde2f0" }}>{c.label}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, color: "#F0F4FF" }}>{c.label}</span>
                     <span style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: 11, color: "#00c8f0" }}>
                       ~{formatCost(est.cost)}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: "#5a6a8a", paddingLeft: 22 }}>{c.description}</div>
+                  <div style={{ fontSize: 11, color: "#7B8DB0", paddingLeft: 22 }}>{c.description}</div>
                 </button>
               );
             })}
@@ -393,7 +393,7 @@ function ImpactPanel({ analysis, model, input }: {
   model: ModelId;
   input: string;
 }) {
-  const riskColor = RISK_SEVERITY_COLOR[analysis.overallRisk] ?? "#5a6a8a";
+  const riskColor = RISK_SEVERITY_COLOR[analysis.overallRisk] ?? "#7B8DB0";
   return (
     <div style={{ marginBottom: 24 }}>
       {/* Summary header */}
@@ -413,7 +413,7 @@ function ImpactPanel({ analysis, model, input }: {
             complexity: {analysis.estimatedComplexity}
           </span>
         </div>
-        <p style={{ fontSize: 13, color: "#dde2f0", lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.6, margin: 0 }}>
           {analysis.summary}
         </p>
       </div>
@@ -427,13 +427,13 @@ function ImpactPanel({ analysis, model, input }: {
           return (
             <div key={a.agentId} style={{
               ...S.card,
-              border: `1px solid ${meta?.color ?? "#5a6a8a"}33`,
+              border: `1px solid ${meta?.color ?? "#7B8DB0"}33`,
               padding: 14,
-              borderTop: `2px solid ${meta?.color ?? "#5a6a8a"}`,
+              borderTop: `2px solid ${meta?.color ?? "#7B8DB0"}`,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>{meta?.icon ?? "🤖"}</span>
-                <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: meta?.color ?? "#dde2f0" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: meta?.color ?? "#F0F4FF" }}>
                   {a.agentName}
                 </span>
                 <span style={{ marginLeft: "auto", ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: pStyle.bg, color: pStyle.text }}>
@@ -461,10 +461,10 @@ function ImpactPanel({ analysis, model, input }: {
                 </>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
                   Est. ~{meta?.estSeconds ?? 30}s
                 </span>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
                   ~{formatCost(est.cost)}
                 </span>
               </div>
@@ -537,10 +537,10 @@ function AgentRoster({ agents, activeAgentIds, analysisComplete }: {
               }}
             >
               <div style={{ fontSize: 18, marginBottom: 4 }}>{meta.icon}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: "#dde2f0", marginBottom: 2 }}>
+              <div style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: "#F0F4FF", marginBottom: 2 }}>
                 {meta.shortName}
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 9, color: "#5a6a8a", marginBottom: 6 }}>
+              <div style={{ fontFamily: "monospace", fontSize: 9, color: "#7B8DB0", marginBottom: 6 }}>
                 {meta.badge}
               </div>
 
@@ -550,7 +550,7 @@ function AgentRoster({ agents, activeAgentIds, analysisComplete }: {
                 status === "done"    ? "#0fba7a" :
                 status === "warn"    ? "#f0a020" :
                 status === "error"   ? "#e84040" :
-                status === "skipped" ? "#5a6a8a" : "#5a6a8a",
+                status === "skipped" ? "#7B8DB0" : "#7B8DB0",
               }}>
                 {status === "active"  ? "Speaking…" :
                  status === "done"    ? `✓ ${agent?.durationMs ? formatDuration(agent.durationMs) : "done"}` :
@@ -634,7 +634,7 @@ function SessionTimeline({ agents, activeAgentIds, analysisComplete }: {
               <div style={{ paddingBottom: isLast ? 0 : 12 }}>
                 <div style={{
                   fontFamily: "monospace", fontSize: 11,
-                  color: item.status === "idle" ? "#5a6a8a" : "#dde2f0",
+                  color: item.status === "idle" ? "#7B8DB0" : "#F0F4FF",
                   fontWeight: item.status === "active" ? 700 : 400,
                 }}>
                   {meta?.shortName ?? item.agentId}
@@ -642,7 +642,7 @@ function SessionTimeline({ agents, activeAgentIds, analysisComplete }: {
                 <div style={{ fontFamily: "monospace", fontSize: 9, color:
                   item.status === "active" ? "#00c8f0" :
                   item.status === "done"   ? "#0fba7a" :
-                  "#5a6a8a",
+                  "#7B8DB0",
                 }}>
                   {item.status === "done"   && item.durationMs ? `✓ ${formatDuration(item.durationMs)}` :
                    item.status === "active" ? "running..." :
@@ -664,7 +664,7 @@ function SessionTimeline({ agents, activeAgentIds, analysisComplete }: {
 function DesignerOutput({ content }: { content: string }) {
   const lines = content.split("\n");
   return (
-    <div style={{ fontSize: 13, color: "#dde2f0", lineHeight: 1.7 }}>
+    <div style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.7 }}>
       {lines.map((line, i) => {
         if (line.startsWith("## ")) {
           return (
@@ -700,7 +700,7 @@ function DesignerOutput({ content }: { content: string }) {
               <span style={{ color: "#00c8f0", fontFamily: "monospace", fontSize: 12, flexShrink: 0 }}>
                 {line.match(/^(\d+\.)/)?.[1]}
               </span>
-              <span style={{ fontSize: 13, color: "#dde2f0" }}>
+              <span style={{ fontSize: 13, color: "#F0F4FF" }}>
                 {line.replace(/^\d+\.\s*/, "")}
               </span>
             </div>
@@ -710,12 +710,12 @@ function DesignerOutput({ content }: { content: string }) {
           return (
             <div key={i} style={{ display: "flex", gap: 8, marginBottom: 3 }}>
               <span style={{ color: "#00c8f044" }}>›</span>
-              <span style={{ fontSize: 13, color: "#dde2f0" }}>{line.slice(2)}</span>
+              <span style={{ fontSize: 13, color: "#F0F4FF" }}>{line.slice(2)}</span>
             </div>
           );
         }
         return line.trim() ? (
-          <p key={i} style={{ margin: "0 0 4px", fontSize: 13, color: "#dde2f0" }}>{line}</p>
+          <p key={i} style={{ margin: "0 0 4px", fontSize: 13, color: "#F0F4FF" }}>{line}</p>
         ) : <div key={i} style={{ height: 6 }} />;
       })}
     </div>
@@ -754,7 +754,7 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 18 }}>{meta?.icon ?? "🤖"}</span>
           <div>
-            <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: meta?.color ?? "#dde2f0" }}>
+            <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: meta?.color ?? "#F0F4FF" }}>
               {agent.agentName}
             </span>
           </div>
@@ -775,7 +775,7 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
             </span>
           )}
           {agent.durationMs && (
-            <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+            <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
               {formatDuration(agent.durationMs)}
             </span>
           )}
@@ -790,8 +790,8 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
         ) : isDesigner && agent.content ? (
           <DesignerOutput content={agent.content} />
         ) : (
-          <div style={{ fontSize: 13, color: "#dde2f0", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
-            {agent.content || <span style={{ color: "#5a6a8a" }}>Waiting…</span>}
+          <div style={{ fontSize: 13, color: "#F0F4FF", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+            {agent.content || <span style={{ color: "#7B8DB0" }}>Waiting…</span>}
             {isStreaming && <span className="arboard-blink" />}
           </div>
         )}
@@ -847,7 +847,7 @@ function VerdictBox({
           {colors.label}
         </span>
         {totalMs && (
-          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#5a6a8a", marginLeft: "auto" }}>
+          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7B8DB0", marginLeft: "auto" }}>
             Round 1 · {completedAgents.length} agents · {formatDuration(totalMs)} total
           </span>
         )}
@@ -866,7 +866,7 @@ function VerdictBox({
                 borderLeft: "3px solid #e84040",
               }}>
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#e84040", flexShrink: 0 }}>{i + 1}.</span>
-                <span style={{ fontSize: 12, color: "#dde2f0" }}>{item}</span>
+                <span style={{ fontSize: 12, color: "#F0F4FF" }}>{item}</span>
               </div>
             ))}
           </div>
@@ -930,7 +930,7 @@ function SessionSummaryDrawer({
           <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: "#0fba7a" }}>
             ✓ SESSION COMPLETE
           </span>
-          <button onClick={onClose} style={{ color: "#5a6a8a", background: "none", border: "none", fontSize: 16, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ color: "#7B8DB0", background: "none", border: "none", fontSize: 16, cursor: "pointer" }}>✕</button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 20 }}>
@@ -942,8 +942,8 @@ function SessionSummaryDrawer({
           ].map(item => (
             <div key={item.label} style={{ ...S.card, padding: "12px 14px" }}>
               <div style={{ ...S.label, marginBottom: 4 }}>{item.label}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: "#dde2f0" }}>{item.value}</div>
-              {item.sub && <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a", marginTop: 2 }}>{item.sub}</div>}
+              <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: "#F0F4FF" }}>{item.value}</div>
+              {item.sub && <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>{item.sub}</div>}
             </div>
           ))}
         </div>
@@ -958,7 +958,7 @@ function SessionSummaryDrawer({
             const meta = AGENT_META[a.agentId];
             return (
               <div key={a.agentId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontFamily: "monospace", fontSize: 11, color: "#dde2f0", width: 80, flexShrink: 0 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF", width: 80, flexShrink: 0 }}>
                   {meta?.shortName ?? a.agentName}
                 </span>
                 <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.06)", borderRadius: 3 }}>
@@ -968,10 +968,10 @@ function SessionSummaryDrawer({
                     transition: "width 0.6s ease",
                   }} />
                 </div>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a", width: 70, textAlign: "right", flexShrink: 0 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 70, textAlign: "right", flexShrink: 0 }}>
                   ~{(tokens / 1000).toFixed(1)}k tok
                 </span>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a", width: 40, textAlign: "right", flexShrink: 0 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 40, textAlign: "right", flexShrink: 0 }}>
                   {a.durationMs ? formatDuration(a.durationMs) : "—"}
                 </span>
               </div>
@@ -1193,7 +1193,7 @@ export default function ForumTestUI() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", background: "#07090f", color: "#dde2f0", paddingBottom: showSummaryDrawer ? 320 : 40 }}>
+    <div style={{ minHeight: "100vh", background: "#07090f", color: "#F0F4FF", paddingBottom: showSummaryDrawer ? 320 : 40 }}>
 
       {/* ══ HEADER ════════════════════════════════════════════════════════════ */}
       <header style={{
@@ -1209,14 +1209,14 @@ export default function ForumTestUI() {
             <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 18, color: "#00c8f0" }}>
               ⚖ ARBoard
             </span>
-            <span style={{ fontSize: 12, color: "#5a6a8a" }}>
+            <span style={{ fontSize: 12, color: "#7B8DB0" }}>
               Salesforce Architecture Review Board
             </span>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {sessionId && (
-              <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+              <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
                 {sessionId.slice(0, 8)}
               </span>
             )}
@@ -1234,7 +1234,7 @@ export default function ForumTestUI() {
                 style={{
                   fontSize: 11, padding: "5px 12px",
                   border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-                  color: "#5a6a8a", background: "transparent", cursor: "pointer",
+                  color: "#7B8DB0", background: "transparent", cursor: "pointer",
                 }}
               >
                 ＋ New Session
@@ -1297,11 +1297,11 @@ export default function ForumTestUI() {
                     label={FORMAT_LABELS[uploadResult.format] ?? uploadResult.format.toUpperCase()}
                     color="#00c8f0"
                   />
-                  <span style={{ fontSize: 12, color: "#dde2f0" }}>{uploadResult.filename}</span>
-                  <span style={{ fontSize: 11, color: "#5a6a8a" }}>{formatBytes(uploadResult.fileSize)}</span>
+                  <span style={{ fontSize: 12, color: "#F0F4FF" }}>{uploadResult.filename}</span>
+                  <span style={{ fontSize: 11, color: "#7B8DB0" }}>{formatBytes(uploadResult.fileSize)}</span>
                   {uploadResult.wasChunked && <Chip label="summarised" color="#f0a020" />}
                   <button onClick={clearDocument} style={{
-                    marginLeft: "auto", fontSize: 11, color: "#5a6a8a",
+                    marginLeft: "auto", fontSize: 11, color: "#7B8DB0",
                     background: "none", border: "none", cursor: "pointer",
                   }}>Clear ✕</button>
                 </div>
@@ -1313,14 +1313,14 @@ export default function ForumTestUI() {
                     style={{
                       display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
                       border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-                      fontSize: 12, color: "#dde2f0", background: "#161d2e", cursor: "pointer",
+                      fontSize: 12, color: "#F0F4FF", background: "#161d2e", cursor: "pointer",
                     }}
                   >
                     {uploading
                       ? <><span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#00c8f0", display: "inline-block" }} /> Extracting…</>
                       : "↑ Upload Document"}
                   </button>
-                  <span style={{ fontSize: 11, color: "#5a6a8a" }}>
+                  <span style={{ fontSize: 11, color: "#7B8DB0" }}>
                     Drag & drop — PDF · DOCX · TXT · MD · HTML (Confluence)
                   </span>
                   {uploadError && <span style={{ fontSize: 11, color: "#e84040", marginLeft: "auto" }}>{uploadError}</span>}
@@ -1370,7 +1370,7 @@ export default function ForumTestUI() {
                 style={{
                   width: "100%", height: 160, resize: "vertical",
                   background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 8, padding: 16, fontSize: 14, color: "#dde2f0",
+                  borderRadius: 8, padding: 16, fontSize: 14, color: "#F0F4FF",
                   fontFamily: "system-ui, -apple-system, sans-serif",
                   outline: "none", lineHeight: 1.6,
                   transition: "border-color 0.2s",
@@ -1424,7 +1424,7 @@ export default function ForumTestUI() {
                   width: 8, height: 8, borderRadius: "50%",
                   background: "#00c8f0", display: "inline-block",
                 }} />
-                <span style={{ color: "#5a6a8a", fontSize: 13 }}>
+                <span style={{ color: "#7B8DB0", fontSize: 13 }}>
                   Analysing requirement · selecting agents…
                 </span>
               </div>
@@ -1510,10 +1510,10 @@ export default function ForumTestUI() {
                   </div>
                   <div>
                     <div style={S.label}>Tokens Used</div>
-                    <div style={{ fontFamily: "monospace", fontSize: 14, color: "#dde2f0", fontWeight: 700 }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 14, color: "#F0F4FF", fontWeight: 700 }}>
                       {((totalInputTokens + totalOutputTokens) / 1000).toFixed(1)}k
                     </div>
-                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
                       est. {(estimate.totalTokens / 1000).toFixed(0)}k
                     </div>
                   </div>
@@ -1522,7 +1522,7 @@ export default function ForumTestUI() {
                     <div style={{ fontFamily: "monospace", fontSize: 14, color: "#00c8f0", fontWeight: 700 }}>
                       {formatCost(actualCost)}
                     </div>
-                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
                       est. {formatCost(estimate.cost)}
                     </div>
                   </div>
