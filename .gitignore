@@ -1,16 +1,8 @@
-# dependencies
-node_modules/
-
-# Next.js build output
-.next/
-out/
-
-# env files — never commit secrets
-.env
-.env.local
-.env*.local
-
-# misc
-.dev.log
-.dev.pid
-tsconfig.tsbuildinfo
+.env.local 
+.next/ 
+node_modules/ 
+.dev-server-err.log 
+.dev-server.log 
+.dev.log 
+.dev.pid 
+tsconfig.tsbuildinfo 

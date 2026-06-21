@@ -120,4 +120,33 @@ export interface ForumRequest {
   domainId?: string;        // defaults to "salesforce"
   clientContext?: ClientContext;
   agentIds?: string[];      // optional subset of agents to run
+  modelOverride?: string;   // override agent model (e.g. from UI model selector)
+}
+
+// ─── Document Upload ──────────────────────────────────────────────────────────
+export interface DocumentMetadata {
+  title: string;
+  wordCount: number;
+  sfComponents: string[];
+  sfClouds: string[];
+  complianceTerms: string[];
+  integrations: string[];
+}
+
+export interface DetectedContext {
+  sessionName: string;
+  clouds: string[];
+  compliance: string[];
+  integrations: string[];
+}
+
+export interface UploadResult {
+  extractedText: string;
+  metadata: DocumentMetadata;
+  detectedContext: DetectedContext;
+  preview: string;        // first 500 chars of extracted text
+  wasChunked: boolean;
+  filename: string;
+  fileSize: number;
+  format: string;
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import type { AgentConfig, ClientContext, DomainConfig, ForumRequest } from "@/lib/types";
 import { getDomain } from "@/lib/domains/salesforce";
 import { AgentRunner } from "@/lib/agents/AgentRunner";
+import type { UsageData } from "@/lib/agents/AgentRunner";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
 
 export class ForumOrchestrator {
@@ -48,16 +49,28 @@ export class ForumOrchestrator {
     yield `data: ${JSON.stringify({ type: "session_start", sessionId, agentCount: agents.length })}\n\n`;
 
     for (const agent of agents) {
+      const effectiveAgent = request.modelOverride
+        ? { ...agent, model: request.modelOverride }
+        : agent;
+
       yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
+      const agentStart = Date.now();
+      let usage: UsageData | undefined;
       try {
-        for await (const token of AgentRunner.runStream(agent, request.input, clientContext, sessionId, domainId)) {
-          yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token })}\n\n`;
+        for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId)) {
+          if (typeof chunk === "string") {
+            yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
+          } else {
+            usage = chunk.__usage;
+          }
         }
-        yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id })}\n\n`;
+        const durationMs = Date.now() - agentStart;
+        yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens })}\n\n`;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
-        yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message })}\n\n`;
+        const durationMs = Date.now() - agentStart;
+        yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs })}\n\n`;
       }
     }
 

@@ -5,7 +5,10 @@ import { isMockMode, getMockImpactAnalysis } from "@/lib/mock/mockMode";
 const anthropic = new Anthropic();
 
 const ANALYSER_SYSTEM = `You are a Salesforce Architecture Impact Analyser for an Architecture Review Board.
-Given a requirement or change request, you determine which specialist agents must review it and why.
+You will receive either a SHORT REQUIREMENT (1-3 paragraphs) or a FULL SOLUTION DESIGN DOCUMENT.
+
+For a SHORT REQUIREMENT: analyse it directly to determine agent coverage and risks.
+For a FULL SOLUTION DESIGN DOCUMENT: first extract the key architecture decisions, proposed Salesforce components, integration patterns, and stated risks — then map these to the specialist agents who must review them.
 
 Available agents and their scope:
 - sf-designer: Solution architecture, data model design, org strategy, integration architecture, multi-cloud

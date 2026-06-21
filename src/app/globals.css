@@ -2,11 +2,100 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   background: #07090f;
-  color: #e6edf3;
+  color: #dde2f0;
+  font-family: system-ui, -apple-system, sans-serif;
 }
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 200, 240, 0); }
+  50%       { box-shadow: 0 0 0 6px rgba(0, 200, 240, 0.15); }
+}
+
+@keyframes drawer-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes dot-fill {
+  from { opacity: 0.3; }
+  to   { opacity: 1; }
+}
+
+@keyframes verdict-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.arboard-blink {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: #00c8f0;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: blink 1s step-end infinite;
+}
+
+.arboard-slide-up {
+  animation: slide-up-fade 0.3s ease forwards;
+}
+
+.arboard-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.arboard-drawer {
+  animation: drawer-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.arboard-verdict {
+  animation: verdict-in 0.35s ease forwards;
+}
+
+/* Responsive two-column session layout */
+.session-cols {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .session-cols {
+    grid-template-columns: 1fr;
+  }
+  .session-timeline-col {
+    display: none;
+  }
+}
+
+/* Agent chip grid */
+.agent-roster {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .agent-roster {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
