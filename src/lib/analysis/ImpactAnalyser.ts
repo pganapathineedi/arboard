@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgentActivation, ImpactAnalysis } from "@/lib/types";
+import type { OrgContext } from "@/lib/types/salesforce";
+import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { isMockMode, getMockImpactAnalysis } from "@/lib/mock/mockMode";
 
 const anthropic = new Anthropic();
@@ -83,11 +85,16 @@ const ANALYSE_TOOL: Anthropic.Tool = {
 };
 
 export class ImpactAnalyser {
-  static async analyse(input: string, domainId = "salesforce"): Promise<ImpactAnalysis> {
+  static async analyse(input: string, domainId = "salesforce", orgContext?: OrgContext): Promise<ImpactAnalysis> {
     if (isMockMode()) {
       await new Promise((r) => setTimeout(r, 800));
       return getMockImpactAnalysis();
     }
+
+    const orgBlock = orgContext ? PromptBuilder.buildOrgContextBlock(orgContext) : "";
+    const userContent = orgBlock
+      ? `${orgBlock}\n\nREQUIREMENT TO ANALYSE:\nGiven this requirement AND the actual org state above, identify which agents are needed and what SPECIFIC risks exist given the real data volumes, existing automation, and current limits.\n\n${input}`
+      : `Analyse this Salesforce requirement and determine which specialist agents to activate:\n\n${input}`;
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -98,7 +105,7 @@ export class ImpactAnalyser {
       messages: [
         {
           role: "user",
-          content: `Analyse this Salesforce requirement and determine which specialist agents to activate:\n\n${input}`,
+          content: userContent,
         },
       ],
     });

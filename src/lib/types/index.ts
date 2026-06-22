@@ -107,6 +107,7 @@ export interface MiddlewareContext {
   clientContext: ClientContext;
   systemPrompt: string;
   metadata: Record<string, unknown>;
+  orgContext?: import("@/lib/types/salesforce").OrgContext;
 }
 
 export type MiddlewareFn = (
@@ -121,6 +122,7 @@ export interface ForumRequest {
   clientContext?: ClientContext;
   agentIds?: string[];      // optional subset of agents to run
   modelOverride?: string;   // override agent model (e.g. from UI model selector)
+  orgContext?: import("@/lib/types/salesforce").OrgContext;
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────

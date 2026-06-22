@@ -2,6 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ImpactAnalysis, UploadResult } from "@/lib/types";
+import type { OrgContext } from "@/lib/types/salesforce";
+import { SalesforceOrgBanner } from "@/components/SalesforceOrgBanner";
+import { OrgHealthPanel } from "@/components/OrgHealthPanel";
+import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
 
 // ── Local Types ───────────────────────────────────────────────────────────────
 
@@ -1005,6 +1009,13 @@ export default function ForumTestUI() {
   const [appliedCtx, setAppliedCtx]     = useState<AppliedCtx | null>(null);
   const [ctxApplied, setCtxApplied]     = useState(false);
 
+  const [orgStatus, setOrgStatus]       = useState<"disconnected" | "connecting" | "connected">("disconnected");
+  const [orgInfo, setOrgInfo]           = useState<{ orgName: string; edition: string; isSandbox: boolean } | null>(null);
+  const [orgContext, setOrgContext]      = useState<OrgContext | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [refreshingOrg, setRefreshingOrg] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
+
   const [showSummaryDrawer, setShowSummaryDrawer] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1045,6 +1056,72 @@ export default function ForumTestUI() {
   useEffect(() => {
     if (forumRef.current) forumRef.current.scrollTop = forumRef.current.scrollHeight;
   }, [agents]);
+
+  // ── Salesforce Org Connection ───────────────────────────────────────────────
+
+  const checkOrgStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/salesforce/status");
+      const data = await res.json() as { connected: boolean; orgName?: string; edition?: string; isSandbox?: boolean };
+      if (data.connected) {
+        setOrgStatus("connected");
+        setOrgInfo({ orgName: data.orgName ?? "Salesforce Org", edition: data.edition ?? "", isSandbox: data.isSandbox ?? false });
+      } else {
+        setOrgStatus("disconnected");
+      }
+    } catch {
+      setOrgStatus("disconnected");
+    }
+  }, []);
+
+  const fetchOrgMetadata = useCallback(async () => {
+    setRefreshingOrg(true);
+    try {
+      const res = await fetch("/api/salesforce/metadata");
+      if (res.ok) {
+        const ctx = await res.json() as OrgContext;
+        setOrgContext(ctx);
+        setLastSyncTime(new Date());
+        if (ctx.orgProfile) {
+          setOrgInfo({ orgName: ctx.orgProfile.orgName, edition: ctx.orgProfile.edition, isSandbox: ctx.orgProfile.isSandbox });
+        }
+      }
+    } catch { /* non-fatal */ }
+    finally { setRefreshingOrg(false); }
+  }, []);
+
+  useEffect(() => {
+    checkOrgStatus();
+    const handleMessage = (e: MessageEvent) => {
+      if ((e.data as { type?: string })?.type === "sf-connected") {
+        setOrgStatus("connected");
+        fetchOrgMetadata();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [checkOrgStatus, fetchOrgMetadata]);
+
+  const startConnect = useCallback(() => {
+    setOrgStatus("connecting");
+    window.open("/api/salesforce/connect", "sf-oauth", "width=620,height=720,left=200,top=100");
+    if (typeof window !== "undefined") localStorage.setItem("sf-setup-seen", "1");
+  }, []);
+
+  const handleOrgConnect = useCallback(() => {
+    const seen = typeof window !== "undefined" && localStorage.getItem("sf-setup-seen");
+    if (!seen) { setShowSetupModal(true); } else { startConnect(); }
+  }, [startConnect]);
+
+  const handleOrgDisconnect = useCallback(async () => {
+    await fetch("/api/salesforce/disconnect", { method: "POST" });
+    setOrgStatus("disconnected");
+    setOrgContext(null);
+    setOrgInfo(null);
+    setLastSyncTime(null);
+  }, []);
+
+  const handleOrgRefresh = useCallback(() => { fetchOrgMetadata(); }, [fetchOrgMetadata]);
 
   // ── Upload ──────────────────────────────────────────────────────────────────
 
@@ -1141,7 +1218,7 @@ export default function ForumTestUI() {
       const res = await fetch("/api/forum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, clientContext, modelOverride: model }),
+        body: JSON.stringify({ input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined }),
         signal: abortRef.current.signal,
       });
       const reader  = res.body?.getReader();
@@ -1361,6 +1438,23 @@ export default function ForumTestUI() {
               </div>
             )}
 
+            {/* Salesforce Org Connection Banner */}
+            <SalesforceOrgBanner
+              status={orgStatus}
+              orgInfo={orgInfo}
+              orgContext={orgContext}
+              lastSyncTime={lastSyncTime}
+              onConnect={handleOrgConnect}
+              onDisconnect={handleOrgDisconnect}
+              onRefresh={handleOrgRefresh}
+              refreshing={refreshingOrg}
+            />
+
+            {/* Org Health Snapshot */}
+            {orgStatus === "connected" && orgContext && (
+              <OrgHealthPanel orgContext={orgContext} />
+            )}
+
             {/* Textarea */}
             <div style={{ marginBottom: 12 }}>
               <textarea
@@ -1542,6 +1636,14 @@ export default function ForumTestUI() {
           actualCost={actualCost}
           estimate={estimate}
           onClose={() => setShowSummaryDrawer(false)}
+        />
+      )}
+
+      {/* ══ CONNECTED APP SETUP MODAL ═════════════════════════════════════════ */}
+      {showSetupModal && (
+        <ConnectedAppSetupModal
+          onClose={() => setShowSetupModal(false)}
+          onProceed={() => { setShowSetupModal(false); startConnect(); }}
         />
       )}
     </div>

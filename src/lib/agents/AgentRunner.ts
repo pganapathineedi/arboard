@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgentConfig, AgentResult, ClientContext, MiddlewareContext } from "@/lib/types";
+import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { defaultPipeline } from "@/lib/middleware";
 import { isMockMode, mockStream, getMockResponse } from "@/lib/mock/mockMode";
@@ -20,18 +21,19 @@ export class AgentRunner {
     input: string,
     clientContext: ClientContext,
     sessionId: string,
-    domainId: string
+    domainId: string,
+    orgContext?: OrgContext,
   ): AsyncGenerator<StreamChunk> {
     if (isMockMode()) {
       yield* mockStream(getMockResponse(agent.id));
       return;
     }
 
-    const systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext);
+    const systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext, undefined, orgContext);
 
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
-      input, clientContext, systemPrompt, metadata: {},
+      input, clientContext, systemPrompt, metadata: {}, orgContext,
     };
 
     const finalCtx = await defaultPipeline(middlewareCtx, async () => middlewareCtx);
@@ -68,12 +70,13 @@ export class AgentRunner {
     input: string,
     clientContext: ClientContext,
     sessionId: string,
-    domainId: string
+    domainId: string,
+    orgContext?: OrgContext,
   ): Promise<AgentResult> {
     const start = Date.now();
     let content = "";
 
-    for await (const chunk of AgentRunner.runStream(agent, input, clientContext, sessionId, domainId)) {
+    for await (const chunk of AgentRunner.runStream(agent, input, clientContext, sessionId, domainId, orgContext)) {
       if (typeof chunk === "string") content += chunk;
     }
 

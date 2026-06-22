@@ -15,6 +15,7 @@ export class ForumOrchestrator {
     const sessionId = randomUUID();
     const domainId = request.domainId ?? "salesforce";
     const clientContext: ClientContext = request.clientContext ?? {};
+    const orgContext = request.orgContext;
     const domain = getDomain(domainId);
 
     // ── Impact Analysis (skip if caller already provided explicit agent list) ──
@@ -23,7 +24,7 @@ export class ForumOrchestrator {
     if (!selectedAgentIds || selectedAgentIds.length === 0) {
       yield `data: ${JSON.stringify({ type: "analysis_start" })}\n\n`;
       try {
-        const analysis = await ImpactAnalyser.analyse(request.input, domainId);
+        const analysis = await ImpactAnalyser.analyse(request.input, domainId, orgContext);
         yield `data: ${JSON.stringify({ type: "impact_analysis", analysis })}\n\n`;
 
         // Activate required + recommended agents; always include judge, scribe, learner
@@ -58,7 +59,7 @@ export class ForumOrchestrator {
       const agentStart = Date.now();
       let usage: UsageData | undefined;
       try {
-        for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId)) {
+        for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext)) {
           if (typeof chunk === "string") {
             yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
           } else {
