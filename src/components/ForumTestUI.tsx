@@ -6,6 +6,7 @@ import type { OrgContext } from "@/lib/types/salesforce";
 import { SalesforceOrgBanner } from "@/components/SalesforceOrgBanner";
 import { OrgHealthPanel } from "@/components/OrgHealthPanel";
 import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
+import { ClientContextBanner } from "@/components/ClientContextBanner";
 
 // ── Local Types ───────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ interface AgentOutput {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 interface SSEEvent {
@@ -35,6 +38,8 @@ interface SSEEvent {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 interface AppliedCtx {
@@ -50,28 +55,28 @@ type ChipStatus = "idle" | "active" | "done" | "warn" | "skipped" | "error";
 
 const MODEL_CONFIG: Record<ModelId, {
   label: string; icon: string;
-  inputPer1K: number; outputPer1K: number; description: string;
+  inputPer1K: number; outputPer1K: number; cacheReadPer1K: number; description: string;
 }> = {
   "claude-haiku-4-5-20251001": {
     label: "claude-haiku-4-5", icon: "⚡",
-    inputPer1K: 0.0008, outputPer1K: 0.004,
+    inputPer1K: 0.0008, outputPer1K: 0.004, cacheReadPer1K: 0.00008,
     description: "Fast · Cost-efficient · Good for most reviews",
   },
   "claude-sonnet-4-6": {
     label: "claude-sonnet-4-6", icon: "🧠",
-    inputPer1K: 0.003, outputPer1K: 0.015,
+    inputPer1K: 0.003, outputPer1K: 0.015, cacheReadPer1K: 0.0003,
     description: "Balanced · Recommended for complex projects",
   },
   "claude-opus-4-8": {
     label: "claude-opus-4-8", icon: "🚀",
-    inputPer1K: 0.015, outputPer1K: 0.075,
+    inputPer1K: 0.015, outputPer1K: 0.075, cacheReadPer1K: 0.0015,
     description: "Maximum depth · Best for high-stakes reviews",
   },
 };
 
 const ALL_AGENT_IDS = [
   "sf-designer", "sf-lwc", "sf-omniStudio", "sf-flow",
-  "sf-apex", "sf-patterns", "sf-judge", "sf-scribe", "sf-learner",
+  "sf-apex", "sf-patterns", "sf-integration", "sf-judge", "sf-scribe", "sf-learner",
 ];
 
 const AGENT_META: Record<string, {
@@ -82,8 +87,9 @@ const AGENT_META: Record<string, {
   "sf-omniStudio": { icon: "🔮", color: "#9f70f5", badge: "OMNI EXPERT",     estSeconds: 32, shortName: "OmniStudio" },
   "sf-flow":       { icon: "🔄", color: "#f0a020", badge: "FLOW BUILDER",    estSeconds: 35, shortName: "Flow"       },
   "sf-apex":       { icon: "⚙️",  color: "#e84040", badge: "APEX EXPERT",    estSeconds: 40, shortName: "Apex"       },
-  "sf-patterns":   { icon: "📐", color: "#0fba7a", badge: "PATTERNS",        estSeconds: 35, shortName: "Patterns"   },
-  "sf-judge":      { icon: "⚖️",  color: "#f0a020", badge: "JUDGE",          estSeconds: 45, shortName: "Judge"      },
+  "sf-patterns":    { icon: "📐", color: "#0fba7a", badge: "PATTERNS",        estSeconds: 35, shortName: "Patterns"    },
+  "sf-integration": { icon: "🔗", color: "#00c8f0", badge: "INTEGRATION",     estSeconds: 40, shortName: "Integration" },
+  "sf-judge":       { icon: "⚖️",  color: "#f0a020", badge: "JUDGE",          estSeconds: 45, shortName: "Judge"       },
   "sf-scribe":     { icon: "📝", color: "#7B8DB0", badge: "SCRIBE",          estSeconds: 20, shortName: "Scribe"     },
   "sf-learner":    { icon: "🎓", color: "#9f70f5", badge: "LEARNER",         estSeconds: 18, shortName: "Learner"    },
 };
@@ -120,6 +126,15 @@ function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+function formatAge(date: Date): string {
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
 }
 
 function formatCost(usd: number): string {
@@ -386,6 +401,238 @@ function ModelDropdown({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── AgentSelectorPanel ────────────────────────────────────────────────────────
+
+const ALWAYS_ON_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
+
+function AgentSelectorPanel({
+  analysis, model, input, selectedAgentIds, onToggle, onReset, onRun,
+  lastSyncTime, orgConnected, onRefreshOrg,
+}: {
+  analysis: ImpactAnalysis;
+  model: ModelId;
+  input: string;
+  selectedAgentIds: Set<string>;
+  onToggle: (id: string) => void;
+  onReset: () => void;
+  onRun: () => void;
+  lastSyncTime: Date | null;
+  orgConnected: boolean;
+  onRefreshOrg: () => void;
+}) {
+  const analysisAgentSet = new Set(analysis.activatedAgents.map(a => a.agentId));
+  const addableAgents = ALL_AGENT_IDS.filter(id => !analysisAgentSet.has(id));
+  const riskColor = RISK_SEVERITY_COLOR[analysis.overallRisk] ?? "#7B8DB0";
+  const est = estimateSession(input, Math.max(1, selectedAgentIds.size), model);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      {/* Impact summary */}
+      <div style={{ ...S.card, borderLeft: `3px solid ${riskColor}`, padding: "14px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <span style={S.label}>Impact Analysis</span>
+          <span style={{
+            fontFamily: "monospace", fontSize: 10, padding: "2px 8px", borderRadius: 4,
+            border: `1px solid ${riskColor}44`, background: `${riskColor}15`, color: riskColor,
+          }}>
+            {analysis.overallRisk.toUpperCase()} RISK
+          </span>
+          <span style={{ ...S.label }}>complexity: {analysis.estimatedComplexity}</span>
+          <button
+            onClick={onReset}
+            style={{
+              marginLeft: "auto", fontSize: 11, padding: "3px 10px",
+              border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5,
+              color: "#7B8DB0", background: "transparent", cursor: "pointer",
+            }}
+          >
+            ← Edit Requirements
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.6, margin: 0 }}>
+          {analysis.summary}
+        </p>
+      </div>
+
+      {/* Section label */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <span style={S.label}>Select Agents for Forum</span>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+          — click to toggle · 🔒 always included
+        </span>
+      </div>
+
+      {/* Activated agent cards with toggles */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 14 }}>
+        {analysis.activatedAgents.map(a => {
+          const meta = AGENT_META[a.agentId];
+          const isAlwaysOn = ALWAYS_ON_IDS.has(a.agentId);
+          const isSelected = selectedAgentIds.has(a.agentId);
+          const pStyle = PRIORITY_STYLE[a.priority] ?? PRIORITY_STYLE.optional;
+          return (
+            <div
+              key={a.agentId}
+              onClick={() => !isAlwaysOn && onToggle(a.agentId)}
+              style={{
+                ...S.card,
+                border: isSelected ? `1px solid ${meta?.color ?? "#7B8DB0"}55` : "1px solid rgba(255,255,255,0.04)",
+                borderTop: isSelected ? `2px solid ${meta?.color ?? "#7B8DB0"}` : "2px solid rgba(255,255,255,0.08)",
+                padding: 14,
+                opacity: isSelected ? 1 : 0.45,
+                cursor: isAlwaysOn ? "default" : "pointer",
+                transition: "opacity 0.2s, border-color 0.2s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 16 }}>{meta?.icon ?? "🤖"}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: meta?.color ?? "#F0F4FF" }}>
+                  {a.agentName}
+                </span>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: pStyle.bg, color: pStyle.text }}>
+                    {a.priority.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 13, color: isAlwaysOn ? "#5a6a8a" : isSelected ? "#0fba7a" : "#5a6a8a" }}>
+                    {isAlwaysOn ? "🔒" : isSelected ? "✓" : "○"}
+                  </span>
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 8px" }}>
+                {a.reason}
+              </p>
+              {a.sfRisks.slice(0, 2).map((r, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 10, color: "#7B8DB0", marginBottom: 3 }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", marginTop: 3, flexShrink: 0, background: i === 0 ? "#e84040" : "#f0a020" }} />
+                  {r}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add-on agents (not triggered by impact analysis) */}
+      {addableAgents.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Add Agents (not triggered by analysis)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {addableAgents.map(id => {
+              const meta = AGENT_META[id];
+              const isSelected = selectedAgentIds.has(id);
+              return (
+                <button
+                  key={id}
+                  onClick={() => onToggle(id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+                    border: `1px solid ${isSelected ? meta.color : "rgba(255,255,255,0.08)"}`,
+                    borderRadius: 6,
+                    background: isSelected ? `${meta.color}15` : "transparent",
+                    color: isSelected ? meta.color : "#7B8DB0",
+                    cursor: "pointer", fontFamily: "monospace", fontSize: 11,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {meta.icon} {meta.shortName}
+                  <span style={{ opacity: 0.7 }}>{isSelected ? " ✓" : " +"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cross-cutting considerations */}
+      {analysis.sfConsiderations.length > 0 && (
+        <div style={{ ...S.card, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ ...S.label, marginBottom: 6 }}>Cross-Cutting Considerations</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {analysis.sfConsiderations.map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, color: "#8a9ab8" }}>
+                <span style={{ color: "#00c8f044", flexShrink: 0 }}>›</span>
+                {c}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Run bar */}
+      <div style={{ paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+
+        {/* Org snapshot staleness notice */}
+        {orgConnected && (() => {
+          if (!lastSyncTime) {
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 12px", borderRadius: 6, background: "rgba(240,160,32,0.08)", border: "1px solid rgba(240,160,32,0.25)" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#f0a020" }}>⚠ Org metadata not loaded</span>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>— agents will run without real org context</span>
+                <button onClick={onRefreshOrg} style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: 10, padding: "3px 10px", borderRadius: 4, border: "1px solid rgba(240,160,32,0.4)", background: "transparent", color: "#f0a020", cursor: "pointer" }}>
+                  Sync Org
+                </button>
+              </div>
+            );
+          }
+          const ageMs  = Date.now() - lastSyncTime.getTime();
+          const ageMins = Math.floor(ageMs / 60000);
+          if (ageMins >= 30) {
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 12px", borderRadius: 6, background: "rgba(232,64,64,0.06)", border: "1px solid rgba(232,64,64,0.2)" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#e84040" }}>⚠ Org snapshot is {formatAge(lastSyncTime)}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>— org data may have changed since last sync</span>
+                <button onClick={onRefreshOrg} style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: 10, padding: "3px 10px", borderRadius: 4, border: "1px solid rgba(232,64,64,0.4)", background: "transparent", color: "#e84040", cursor: "pointer" }}>
+                  Refresh Now
+                </button>
+              </div>
+            );
+          }
+          if (ageMins >= 5) {
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "6px 12px", borderRadius: 6, background: "rgba(240,160,32,0.05)", border: "1px solid rgba(240,160,32,0.15)" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#f0a020" }}>Org snapshot {formatAge(lastSyncTime)}</span>
+                <button onClick={onRefreshOrg} style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "1px solid rgba(240,160,32,0.3)", background: "transparent", color: "#f0a020", cursor: "pointer" }}>
+                  Refresh
+                </button>
+              </div>
+            );
+          }
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#0fba7a", display: "inline-block" }} />
+              <span style={{ fontFamily: "monospace", fontSize: 10, color: "#0fba7a" }}>Org data fresh · synced {formatAge(lastSyncTime)}</span>
+            </div>
+          );
+        })()}
+
+        {/* Main row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontFamily: "monospace", fontSize: 13, color: "#F0F4FF", fontWeight: 700 }}>
+              {selectedAgentIds.size} agent{selectedAgentIds.size !== 1 ? "s" : ""} selected
+            </span>
+            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7B8DB0", marginLeft: 16 }}>
+              Est. ~{formatCost(est.cost)} · ~{(est.totalTokens / 1000).toFixed(0)}k tokens
+            </span>
+          </div>
+          <button
+            onClick={onRun}
+            disabled={selectedAgentIds.size === 0}
+            style={{
+              padding: "10px 28px", background: "#00c8f0", color: "#07090f",
+              fontWeight: 700, fontSize: 14, borderRadius: 8, border: "none",
+              cursor: selectedAgentIds.size === 0 ? "not-allowed" : "pointer",
+              opacity: selectedAgentIds.size === 0 ? 0.4 : 1,
+              transition: "opacity 0.2s",
+            }}
+          >
+            Run Forum → ({selectedAgentIds.size})
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -901,13 +1148,16 @@ function VerdictBox({
 // ── SessionSummaryDrawer ──────────────────────────────────────────────────────
 
 function SessionSummaryDrawer({
-  agents, totalMs, actualTokens, actualCost, estimate, onClose,
+  agents, totalMs, actualTokens, actualCost, estimate, cacheReadTokens, cacheWriteTokens, cacheSavings, onClose,
 }: {
   agents: AgentOutput[];
   totalMs: number;
   actualTokens: number;
   actualCost: number;
   estimate: ReturnType<typeof estimateSession>;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheSavings: number;
   onClose: () => void;
 }) {
   const tokenDiffPct = Math.round(((actualTokens - estimate.totalTokens) / estimate.totalTokens) * 100);
@@ -937,20 +1187,36 @@ function SessionSummaryDrawer({
           <button onClick={onClose} style={{ color: "#7B8DB0", background: "none", border: "none", fontSize: 16, cursor: "pointer" }}>✕</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: cacheReadTokens > 0 ? 12 : 20 }}>
           {[
-            { label: "Total Time",    value: formatDuration(totalMs),      sub: null },
-            { label: "Total Tokens",  value: `${(actualTokens / 1000).toFixed(1)}k`, sub: `est. was ${(estimate.totalTokens / 1000).toFixed(0)}k` },
-            { label: "Actual Cost",   value: formatCost(actualCost),       sub: `est. was ${formatCost(estimate.cost)}` },
-            { label: "Accuracy",      value: accurate ? "✓ within 20%" : `${tokenDiffPct > 0 ? "+" : ""}${tokenDiffPct}% off`, sub: null },
+            { label: "Total Time",    value: formatDuration(totalMs),      sub: null,                                        color: "#F0F4FF" },
+            { label: "Total Tokens",  value: `${(actualTokens / 1000).toFixed(1)}k`, sub: `est. was ${(estimate.totalTokens / 1000).toFixed(0)}k`, color: "#F0F4FF" },
+            { label: "Actual Cost",   value: formatCost(actualCost),       sub: `est. was ${formatCost(estimate.cost)}`,     color: "#00c8f0" },
+            { label: "Accuracy",      value: accurate ? "✓ within 20%" : `${tokenDiffPct > 0 ? "+" : ""}${tokenDiffPct}% off`, sub: null,       color: "#F0F4FF" },
           ].map(item => (
             <div key={item.label} style={{ ...S.card, padding: "12px 14px" }}>
               <div style={{ ...S.label, marginBottom: 4 }}>{item.label}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: "#F0F4FF" }}>{item.value}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: item.color }}>{item.value}</div>
               {item.sub && <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>{item.sub}</div>}
             </div>
           ))}
         </div>
+
+        {cacheReadTokens > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+            {[
+              { label: "Cache Reads",  value: `${(cacheReadTokens / 1000).toFixed(1)}k tok`,  sub: "served from cache", color: "#0fba7a" },
+              { label: "Cache Writes", value: `${(cacheWriteTokens / 1000).toFixed(1)}k tok`, sub: "written to cache",  color: "#F0F4FF" },
+              { label: "Cache Saved",  value: formatCost(cacheSavings),                        sub: "vs full input price", color: "#0fba7a" },
+            ].map(item => (
+              <div key={item.label} style={{ ...S.card, padding: "12px 14px", borderLeft: "2px solid #0fba7a33" }}>
+                <div style={{ ...S.label, marginBottom: 4 }}>{item.label}</div>
+                <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: item.color }}>{item.value}</div>
+                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>{item.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ ...S.label, marginBottom: 10 }}>Per-Agent Breakdown</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1001,6 +1267,8 @@ export default function ForumTestUI() {
   const [analysis, setAnalysis]         = useState<ImpactAnalysis | null>(null);
   const [analysing, setAnalysing]       = useState(false);
   const [activeAgentIds, setActiveAgentIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode]       = useState(false);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
 
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploading, setUploading]       = useState(false);
@@ -1023,12 +1291,14 @@ export default function ForumTestUI() {
   const forumRef     = useRef<HTMLDivElement | null>(null);
 
   // Derived
-  const showSessionView = running || analysing || agents.length > 0 || sessionComplete;
+  const showSessionView = running || agents.length > 0 || sessionComplete;
   const analysisComplete = analysis !== null;
   const judgeAgent = agents.find(a => a.agentId === "sf-judge" && a.complete);
   const verdict    = judgeAgent ? parseVerdict(judgeAgent.content) : null;
 
-  const agentCount = analysis ? analysis.activatedAgents.length : 7;
+  const agentCount = selectionMode && selectedAgentIds.size > 0
+    ? selectedAgentIds.size
+    : analysis ? analysis.activatedAgents.length : 7;
   const estimate   = useMemo(
     () => estimateSession(input, agentCount, model),
     [input, agentCount, model]
@@ -1048,6 +1318,11 @@ export default function ForumTestUI() {
 
   const actualCost = totalInputTokens / 1000 * MODEL_CONFIG[model].inputPer1K +
                      totalOutputTokens / 1000 * MODEL_CONFIG[model].outputPer1K;
+
+  const totalCacheReadTokens  = completedAgents.reduce((s, a) => s + (a.cacheReadTokens  ?? 0), 0);
+  const totalCacheWriteTokens = completedAgents.reduce((s, a) => s + (a.cacheWriteTokens ?? 0), 0);
+  const cacheSavings = totalCacheReadTokens / 1000 *
+    (MODEL_CONFIG[model].inputPer1K - MODEL_CONFIG[model].cacheReadPer1K);
 
   const progressPct = agents.length === 0 ? 0
     : (completedAgents.length / Math.max(agents.length, agentCount)) * 100;
@@ -1183,7 +1458,7 @@ export default function ForumTestUI() {
       case "agent_complete":
         setAgents(prev => prev.map(a =>
           a.agentId === ev.agentId
-            ? { ...a, complete: true, durationMs: ev.durationMs, inputTokens: ev.inputTokens, outputTokens: ev.outputTokens }
+            ? { ...a, complete: true, durationMs: ev.durationMs, inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, cacheReadTokens: ev.cacheReadTokens, cacheWriteTokens: ev.cacheWriteTokens }
             : a
         ));
         break;
@@ -1200,13 +1475,55 @@ export default function ForumTestUI() {
     }
   }, []);
 
+  const analyzeImpact = async () => {
+    if (!input.trim() || analysing) return;
+    setAnalysis(null);
+    setAnalysing(true);
+    setSelectionMode(false);
+    setSelectedAgentIds(new Set());
+
+    try {
+      const res = await fetch("/api/analyse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) throw new Error("Analysis failed");
+      const data = await res.json() as ImpactAnalysis;
+      setAnalysis(data);
+
+      // Pre-select required + recommended + always-on agents
+      const preSelected = new Set<string>([
+        ...data.activatedAgents
+          .filter(a => a.priority !== "optional")
+          .map(a => a.agentId),
+        ...Array.from(ALWAYS_ON_IDS),
+      ]);
+      setSelectedAgentIds(preSelected);
+      setSelectionMode(true);
+    } catch (err) {
+      console.error("Impact analysis failed:", err);
+    } finally {
+      setAnalysing(false);
+    }
+  };
+
+  const handleToggleAgent = (id: string) => {
+    setSelectedAgentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  };
+
   const run = async () => {
     if (!input.trim() || running) return;
-    setAgents([]); setSessionId(null); setAnalysis(null);
+    setAgents([]); setSessionId(null);
     setSessionComplete(false); setShowSummaryDrawer(false);
     setSessionEndTime(null); setSessionStartTime(null);
-    setActiveAgentIds(new Set());
-    setRunning(true); setAnalysing(true);
+    setActiveAgentIds(new Set(selectedAgentIds));
+    setRunning(true);
+    setSelectionMode(false);
     abortRef.current = new AbortController();
 
     const clientContext = appliedCtx ? {
@@ -1218,7 +1535,10 @@ export default function ForumTestUI() {
       const res = await fetch("/api/forum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined }),
+        body: JSON.stringify({
+          input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
+          agentIds: selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined,
+        }),
         signal: abortRef.current.signal,
       });
       const reader  = res.body?.getReader();
@@ -1251,6 +1571,8 @@ export default function ForumTestUI() {
     setSessionComplete(false); setShowSummaryDrawer(false);
     setSessionEndTime(null); setSessionStartTime(null);
     setActiveAgentIds(new Set());
+    setSelectionMode(false);
+    setSelectedAgentIds(new Set());
   };
 
   const hasDetected = uploadResult && (
@@ -1259,13 +1581,19 @@ export default function ForumTestUI() {
     uploadResult.detectedContext.integrations.length > 0
   );
 
-  // ── Section labels for forum discussion ────────────────────────────────────
-  const SECTION_LABELS: Record<string, string> = {
-    "sf-designer":   "SOLUTION DESIGN",
-    "sf-lwc":        "SPECIALIST REVIEWS",
-    "sf-judge":      "JUDGE RULING",
-    "sf-scribe":     "SCRIBE & LEARNING",
-  };
+  // ── Section labels — derived from agent position, not hardcoded IDs ────────
+  const CLOSING_AGENT_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
+
+  function getSectionLabel(agent: AgentOutput, idx: number): string | undefined {
+    if (agent.agentId === "sf-designer") return "SOLUTION DESIGN";
+    if (agent.agentId === "sf-judge")   return "JUDGE RULING";
+    if (agent.agentId === "sf-scribe")  return "SCRIBE & LEARNING";
+    // First specialist = first non-designer, non-closing agent in the stream
+    const isSpecialist = !CLOSING_AGENT_IDS.has(agent.agentId) && agent.agentId !== "sf-designer";
+    const prevIsDesigner = idx > 0 && agents[idx - 1].agentId === "sf-designer";
+    if (isSpecialist && prevIsDesigner) return "SPECIALIST REVIEWS";
+    return undefined;
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -1305,7 +1633,7 @@ export default function ForumTestUI() {
               estimate={estimate}
             />
 
-            {showSessionView && !running && (
+            {(showSessionView && !running || selectionMode) && (
               <button
                 onClick={resetSession}
                 style={{
@@ -1339,7 +1667,7 @@ export default function ForumTestUI() {
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 0" }}>
 
         {/* ══ PRE-SESSION VIEW ═════════════════════════════════════════════════ */}
-        {!showSessionView && (
+        {!showSessionView && !selectionMode && !analysing && (
           <>
             {input.trim().length > 0 && <EstimatePanel
               agentCount={estimate.agentCount}
@@ -1438,6 +1766,9 @@ export default function ForumTestUI() {
               </div>
             )}
 
+            {/* Client Context Banner */}
+            <ClientContextBanner />
+
             {/* Salesforce Org Connection Banner */}
             <SalesforceOrgBanner
               status={orgStatus}
@@ -1476,7 +1807,7 @@ export default function ForumTestUI() {
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button
-                onClick={run}
+                onClick={analyzeImpact}
                 disabled={!input.trim()}
                 style={{
                   padding: "10px 28px", background: "#00c8f0", color: "#07090f",
@@ -1486,7 +1817,7 @@ export default function ForumTestUI() {
                   transition: "opacity 0.2s",
                 }}
               >
-                Start ARB Session
+                Analyze Impact
               </button>
               {ctxApplied && (
                 <span style={{ fontSize: 12, color: "#0fba7a", display: "flex", alignItems: "center", gap: 6 }}>
@@ -1495,35 +1826,39 @@ export default function ForumTestUI() {
                 </span>
               )}
             </div>
-
-            {/* Impact Analysis panel (pre-session, if ran previously) */}
-            {analysis && (
-              <div style={{ marginTop: 24 }}>
-                <ImpactPanel analysis={analysis} model={model} input={input} />
-              </div>
-            )}
           </>
+        )}
+
+        {/* ══ ANALYSING PHASE ══════════════════════════════════════════════════ */}
+        {analysing && !showSessionView && (
+          <div style={{ ...S.card, padding: "20px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
+            <span className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#00c8f0", display: "inline-block", flexShrink: 0 }} />
+            <div>
+              <div style={{ color: "#F0F4FF", fontSize: 13, marginBottom: 4 }}>Running impact analysis…</div>
+              <div style={{ color: "#7B8DB0", fontSize: 11 }}>Evaluating requirement against Salesforce architecture patterns</div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ AGENT SELECTION PHASE ════════════════════════════════════════════ */}
+        {selectionMode && !showSessionView && analysis && (
+          <AgentSelectorPanel
+            analysis={analysis}
+            model={model}
+            input={input}
+            selectedAgentIds={selectedAgentIds}
+            onToggle={handleToggleAgent}
+            onReset={resetSession}
+            onRun={run}
+            lastSyncTime={lastSyncTime}
+            orgConnected={orgStatus === "connected"}
+            onRefreshOrg={handleOrgRefresh}
+          />
         )}
 
         {/* ══ SESSION VIEW ══════════════════════════════════════════════════════ */}
         {showSessionView && (
           <>
-            {/* Analysing state */}
-            {analysing && !analysis && (
-              <div style={{
-                ...S.card, padding: "14px 18px", marginBottom: 16,
-                display: "flex", alignItems: "center", gap: 12,
-              }}>
-                <span className="animate-pulse" style={{
-                  width: 8, height: 8, borderRadius: "50%",
-                  background: "#00c8f0", display: "inline-block",
-                }} />
-                <span style={{ color: "#7B8DB0", fontSize: 13 }}>
-                  Analysing requirement · selecting agents…
-                </span>
-              </div>
-            )}
-
             {/* Impact analysis result → agent roster */}
             {analysis && (
               <>
@@ -1549,14 +1884,10 @@ export default function ForumTestUI() {
                 {/* RIGHT: Forum discussion */}
                 <div ref={forumRef} style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {agents.map((agent, idx) => {
-                    const sectionLabel = SECTION_LABELS[agent.agentId];
-                    const prevAgentId  = idx > 0 ? agents[idx - 1].agentId : null;
-                    const showDivider  = sectionLabel && prevAgentId !== agent.agentId;
+                    const sectionLabel = getSectionLabel(agent, idx);
                     return (
                       <div key={agent.agentId}>
-                        {showDivider && sectionLabel && (
-                          <SectionDivider label={sectionLabel} />
-                        )}
+                        {sectionLabel && <SectionDivider label={sectionLabel} />}
                         <AgentCard agent={agent} />
                         <div style={{ height: 12 }} />
                       </div>
@@ -1595,7 +1926,7 @@ export default function ForumTestUI() {
             {sessionComplete && totalActualMs !== null && (
               <div style={{ ...S.card, padding: "14px 18px", marginTop: 24 }}>
                 <div style={{ ...S.label, marginBottom: 10 }}>Session Actuals vs Estimate</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: totalCacheReadTokens > 0 ? 14 : 0 }}>
                   <div>
                     <div style={S.label}>Total Time</div>
                     <div style={{ fontFamily: "monospace", fontSize: 14, color: "#0fba7a", fontWeight: 700 }}>
@@ -1621,6 +1952,42 @@ export default function ForumTestUI() {
                     </div>
                   </div>
                 </div>
+
+                {totalCacheReadTokens > 0 && (
+                  <>
+                    <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 14 }} />
+                    <div style={{ ...S.label, marginBottom: 8, color: "#0fba7a" }}>Prompt Cache</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+                      <div>
+                        <div style={S.label}>Cache Reads</div>
+                        <div style={{ fontFamily: "monospace", fontSize: 14, color: "#0fba7a", fontWeight: 700 }}>
+                          {(totalCacheReadTokens / 1000).toFixed(1)}k tok
+                        </div>
+                        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+                          served from cache
+                        </div>
+                      </div>
+                      <div>
+                        <div style={S.label}>Cache Writes</div>
+                        <div style={{ fontFamily: "monospace", fontSize: 14, color: "#F0F4FF", fontWeight: 700 }}>
+                          {(totalCacheWriteTokens / 1000).toFixed(1)}k tok
+                        </div>
+                        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+                          written to cache
+                        </div>
+                      </div>
+                      <div>
+                        <div style={S.label}>Saved</div>
+                        <div style={{ fontFamily: "monospace", fontSize: 14, color: "#0fba7a", fontWeight: 700 }}>
+                          {formatCost(cacheSavings)}
+                        </div>
+                        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+                          vs full input price
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>
@@ -1635,6 +2002,9 @@ export default function ForumTestUI() {
           actualTokens={totalInputTokens + totalOutputTokens}
           actualCost={actualCost}
           estimate={estimate}
+          cacheReadTokens={totalCacheReadTokens}
+          cacheWriteTokens={totalCacheWriteTokens}
+          cacheSavings={cacheSavings}
           onClose={() => setShowSummaryDrawer(false)}
         />
       )}

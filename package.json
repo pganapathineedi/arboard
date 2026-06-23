@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@supabase/supabase-js": "^2.108.2",
     "@types/pdf-parse": "^1.1.5",
     "cheerio": "^1.2.0",
     "iron-session": "^8.0.4",

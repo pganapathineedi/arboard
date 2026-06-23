@@ -10,6 +10,8 @@ const anthropic = new Anthropic();
 export interface UsageData {
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 // StreamChunk is either a text token or a terminal usage marker
@@ -42,16 +44,20 @@ export class AgentRunner {
       model: agent.model,
       max_tokens: agent.maxTokens,
       temperature: agent.temperature ?? 0.3,
-      system: finalCtx.systemPrompt,
+      system: [{ type: "text", text: finalCtx.systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: finalCtx.input }],
     });
 
     let inputTokens = 0;
     let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
 
     for await (const event of stream) {
       if (event.type === "message_start") {
         inputTokens = event.message.usage.input_tokens;
+        cacheReadTokens = (event.message.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0;
+        cacheWriteTokens = (event.message.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0;
       } else if (event.type === "message_delta") {
         outputTokens = event.usage.output_tokens;
       } else if (
@@ -62,7 +68,7 @@ export class AgentRunner {
       }
     }
 
-    yield { __usage: { inputTokens, outputTokens } };
+    yield { __usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } };
   }
 
   static async run(

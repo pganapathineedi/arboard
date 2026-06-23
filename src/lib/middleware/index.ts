@@ -2,12 +2,13 @@ import type { MiddlewareContext, MiddlewareFn } from "@/lib/types";
 import { validateInput } from "./validateInput";
 import { loadContext } from "./loadContext";
 import { injectContext } from "./injectContext";
+import { injectClientContext } from "./injectClientContext";
 import { injectLearnings } from "./injectLearnings";
 import { enforceCompliance } from "./enforceCompliance";
 import { rateLimiter } from "./rateLimiter";
 import { auditLogger } from "./auditLogger";
 
-export { validateInput, loadContext, injectContext, injectLearnings, enforceCompliance, rateLimiter, auditLogger };
+export { validateInput, loadContext, injectContext, injectClientContext, injectLearnings, enforceCompliance, rateLimiter, auditLogger };
 
 export function buildPipeline(...fns: MiddlewareFn[]): MiddlewareFn {
   return async (ctx: MiddlewareContext, next: () => Promise<MiddlewareContext>) => {
@@ -30,6 +31,7 @@ export const defaultPipeline = buildPipeline(
   validateInput,
   loadContext,      // enrich clientContext from stored profile before prompt assembly
   injectContext,
+  injectClientContext,
   injectLearnings,
   enforceCompliance,
   rateLimiter

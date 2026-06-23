@@ -8,6 +8,7 @@ import { patternsAgent } from "./agents/patterns";
 import { judgeAgent } from "./agents/judge";
 import { scribeAgent } from "./agents/scribe";
 import { learnerAgent } from "./agents/learner";
+import { integrationAgent } from "./agents/integration";
 
 export const salesforceDomain: DomainConfig = {
   id: "salesforce",
@@ -19,6 +20,7 @@ export const salesforceDomain: DomainConfig = {
     flowAgent,
     apexAgent,
     patternsAgent,
+    integrationAgent,
     judgeAgent,
     scribeAgent,
     learnerAgent,
