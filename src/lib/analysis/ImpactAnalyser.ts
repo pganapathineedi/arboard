@@ -4,8 +4,6 @@ import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { isMockMode, getMockImpactAnalysis } from "@/lib/mock/mockMode";
 
-const anthropic = new Anthropic();
-
 const ANALYSER_SYSTEM = `You are a Salesforce Architecture Impact Analyser for an Architecture Review Board.
 You will receive either a SHORT REQUIREMENT (1-3 paragraphs) or a FULL SOLUTION DESIGN DOCUMENT.
 
@@ -91,6 +89,7 @@ export class ImpactAnalyser {
       return getMockImpactAnalysis();
     }
 
+    const anthropic = new Anthropic();
     const orgBlock = orgContext ? PromptBuilder.buildOrgContextBlock(orgContext) : "";
     const userContent = orgBlock
       ? `${orgBlock}\n\nREQUIREMENT TO ANALYSE:\nGiven this requirement AND the actual org state above, identify which agents are needed and what SPECIFIC risks exist given the real data volumes, existing automation, and current limits.\n\n${input}`

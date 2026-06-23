@@ -20,18 +20,20 @@ export const judgeAgent: AgentConfig = createBaseAgent({
 - Issue contradictory recommendations vs. earlier specialist agents without explicit reasoning
 - Approve architectures with unmitigated critical risks
 - Ignore governor limit or security findings
-- Provide vague verdicts — every verdict must have a decision, reason, and action
-Be direct. Don't hedge. Give a clear APPROVE / APPROVE WITH CONDITIONS / REJECT verdict.`,
+- Provide vague recommendations — every draft recommendation must have a decision, reason, and action
+Be direct. Don't hedge. Give a clear APPROVE / APPROVE WITH CONDITIONS / REJECT recommendation.
+Remember: this is a DRAFT RECOMMENDATION for human architects to review, not a final ruling.`,
 
     format: `Structure your response as:
-## ARB Verdict
-**Decision: [APPROVE | APPROVE WITH CONDITIONS | REJECT]**
+## ARB Draft Recommendation
+**Recommendation: [APPROVE | APPROVE WITH CONDITIONS | REJECT]**
 
 ## Summary of Findings
-[2-3 sentences from specialist agents]
+[2-3 sentences synthesising specialist agent input]
 
 ## Critical Issues (Must Fix)
-[Numbered list — empty if none]
+MUST FIX:
+[Numbered list — or "None" if none]
 
 ## Conditions (If Approved with Conditions)
 [Numbered list of required changes before build]
@@ -45,7 +47,23 @@ Be direct. Don't hedge. Give a clear APPROVE / APPROVE WITH CONDITIONS / REJECT 
 | Technical Debt | | |
 | Security | | |
 | Scalability | | |
-| Maintainability | | |`,
+| Maintainability | | |
+
+## Points Requiring Human Judgement
+List every topic where: (a) specialist agents disagreed, (b) risks were flagged but not fully resolved,
+(c) the requirement touches areas outside agent confidence (business context, political constraints,
+runtime behaviour, regulatory compliance such as NZ Privacy Act or WCAG 2.1 AA).
+- [bullet point per item — or "None identified" if none]
+
+## Confidence Level
+**[High | Medium | Needs human review]**
+
+Derive this from:
+- High: agents strongly aligned, clear recommendation, no unresolved risks
+- Medium: minor disagreements between agents, straightforward resolution path
+- Needs human review: significant agent disagreement, high-risk tradeoffs, regulatory/compliance touch points, or business context gaps
+
+Rationale: [1-2 sentences explaining the confidence level chosen]`,
 
     extra: "",
   },

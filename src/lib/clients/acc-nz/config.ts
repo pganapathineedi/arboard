@@ -17,6 +17,11 @@ const config: ClientConfig = {
   monthlyBudgetUSD: 200,
   budgetAlertPct: 80,
   zeroRetention: false,
+  jiraConfig: {
+    enabled: true,
+    projectKey: 'ARBOARD',
+    epicKey: undefined,
+  },
 };
 
 export default config;

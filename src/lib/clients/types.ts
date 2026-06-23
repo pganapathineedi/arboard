@@ -16,6 +16,12 @@ export type RegulatoryOverlay = 'HIPAA' | 'FSC' | 'GDPR' | 'APRA-CPS234' | 'SOX'
 export type DataRegion = 'us-east-1' | 'eu-west-1' | 'ap-southeast-2' | 'us-west-2';
 export type UserRole = 'admin' | 'reviewer' | 'readonly';
 
+export interface JiraConfig {
+  enabled: boolean;
+  projectKey: string;  // overrides JIRA_PROJECT_KEY env var if set
+  epicKey?: string;    // optional — links ADR issues to a specific epic
+}
+
 export interface ClientConfig {
   clientId: string;
   name: string;
@@ -29,6 +35,7 @@ export interface ClientConfig {
   alertWebhookUrl?: string;
   zeroRetention: boolean;
   agentOverridesPath?: string;
+  jiraConfig?: JiraConfig;
 }
 
 export interface AgentPromptOverride {

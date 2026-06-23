@@ -26,6 +26,7 @@ export const scribeAgent: AgentConfig = createBaseAgent({
 **ADR-[session-id]-001**
 **Date:** [today]
 **Status:** Proposed
+**Confidence Level:** [High | Medium | Needs human review — copy from Judge's Confidence Level]
 
 ### Context
 [What problem is being solved]
@@ -36,6 +37,12 @@ export const scribeAgent: AgentConfig = createBaseAgent({
 ### Consequences
 **Positive:** [list]
 **Negative / Trade-offs:** [list]
+
+### Points Requiring Human Judgement
+[Copy the bulleted list from the Judge's "Points Requiring Human Judgement" section verbatim]
+
+### Human Sign-off
+_Awaiting countersignature by lead architect_
 
 ## Implementation Checklist
 - [ ] [action item 1]

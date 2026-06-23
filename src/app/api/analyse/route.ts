@@ -4,6 +4,7 @@ import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  console.log('[analyse] POST called');
   let body: { input?: string; documentText?: string; domainId?: string };
 
   try {

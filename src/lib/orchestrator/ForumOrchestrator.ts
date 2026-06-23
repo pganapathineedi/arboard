@@ -5,6 +5,7 @@ import { getDomain } from "@/lib/domains/salesforce";
 import { AgentRunner } from "@/lib/agents/AgentRunner";
 import type { UsageData } from "@/lib/agents/AgentRunner";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
+import { saveADR } from "@/lib/adr/store";
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
@@ -47,6 +48,30 @@ function buildClosingInput(
     "## SPECIALIST REVIEWS",
     reviewsBlock,
   ].join("\n");
+}
+
+// ── ADR helpers ───────────────────────────────────────────────────────────────
+
+function parseVerdictForADR(content: string): string {
+  const u = content.toUpperCase();
+  if (u.includes("APPROVED WITH CONDITIONS") || u.includes("APPROVE WITH CONDITIONS") || u.includes("CONDITIONALLY APPROVED"))
+    return "APPROVED WITH CONDITIONS";
+  if (u.includes("REVISION REQUIRED") || u.includes("REQUIRES REVISION"))
+    return "REVISION REQUIRED";
+  if (u.includes("APPROVED"))
+    return "APPROVED";
+  return "REVIEW REQUIRED";
+}
+
+function parseMustFixForADR(content: string): string[] {
+  const block = content.match(/MUST FIX[:\s]*\n([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i);
+  if (!block) return [];
+  return block[1]
+    .split("\n")
+    .filter(l => /^\d+\./.test(l.trim()))
+    .map(l => l.replace(/^\d+\.\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 // ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -95,7 +120,6 @@ export class ForumOrchestrator {
     const specialists = allAgents.filter(a => a.id !== DESIGNER_ID && !CLOSING_IDS.has(a.id));
     const closing     = allAgents.filter(a => CLOSING_IDS.has(a.id));
 
-    // If designer is absent, fall back to flat execution (all agents, original input)
     const usePhasedFlow = !!designer;
 
     yield `data: ${JSON.stringify({ type: "session_start", sessionId, agentCount: allAgents.length })}\n\n`;
@@ -130,7 +154,6 @@ export class ForumOrchestrator {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         yield `data: ${JSON.stringify({ type: "agent_error", agentId: designer.id, error: message, durationMs: Date.now() - designerStart })}\n\n`;
-        // Designer failed — fall back to original input for remaining agents
         designerOutput = request.input;
       }
 
@@ -168,6 +191,7 @@ export class ForumOrchestrator {
 
       // ── Phase 3: Judge / Scribe / Learner ─────────────────────────────────
       const closingInput = buildClosingInput(request.input, designerOutput, specialistOutputs);
+      const closingOutputs: Record<string, string> = {};
 
       for (const agent of closing) {
         const effectiveAgent = request.modelOverride
@@ -176,23 +200,48 @@ export class ForumOrchestrator {
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
+        let agentContent = "";
         let usage: UsageData | undefined;
         const agentStart = Date.now();
 
         try {
           for await (const chunk of AgentRunner.runStream(effectiveAgent, closingInput, clientContext, sessionId, domainId, orgContext)) {
             if (typeof chunk === "string") {
+              agentContent += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
             } else {
               usage = chunk.__usage;
             }
           }
+          closingOutputs[agent.id] = agentContent;
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
         }
       }
+
+      // ── ADR save — fires after judge + scribe content is collected ─────────
+      const judgeContent  = closingOutputs["sf-judge"]  ?? "";
+      const scribeContent = closingOutputs["sf-scribe"] ?? "";
+
+      let adrJiraKey: string | undefined;
+      let adrJiraUrl: string | undefined;
+      try {
+        const saved = await saveADR({
+          requirement:   request.input,
+          verdict:       parseVerdictForADR(judgeContent),
+          scribeNotes:   scribeContent,
+          mustFixIssues: parseMustFixForADR(judgeContent),
+          sessionId,
+        });
+        adrJiraKey = saved.jiraIssueKey;
+        adrJiraUrl = saved.jiraIssueUrl;
+      } catch (err) {
+        console.error("[orchestrator] saveADR failed:", err instanceof Error ? err.message : err);
+      }
+
+      yield `data: ${JSON.stringify({ type: "adr_saved", jiraIssueKey: adrJiraKey ?? null, jiraIssueUrl: adrJiraUrl ?? null })}\n\n`;
     }
 
     yield `data: ${JSON.stringify({ type: "session_complete", sessionId })}\n\n`;

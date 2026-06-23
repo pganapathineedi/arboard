@@ -40,6 +40,8 @@ interface SSEEvent {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  jiraIssueKey?: string | null;
+  jiraIssueUrl?: string | null;
 }
 
 interface AppliedCtx {
@@ -176,7 +178,9 @@ function parseVerdict(content: string): "approved" | "conditional" | "revision" 
 }
 
 function parseMustFix(content: string): string[] {
-  const block = content.match(/MUST FIX[:\s]*\n([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i);
+  const block = content.match(
+    /(?:MUST FIX[:\s]*|##\s+(?:Critical Issues|MUST FIX)[^\n]*\nMUST FIX[:\s]*)([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i
+  ) ?? content.match(/MUST FIX[:\s]*\n([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i);
   if (!block) return [];
   return block[1]
     .split("\n")
@@ -184,6 +188,35 @@ function parseMustFix(content: string): string[] {
     .map(l => l.replace(/^\d+\.\s*/, "").trim())
     .filter(Boolean)
     .slice(0, 5);
+}
+
+function parseJudgeConfidenceLevel(content: string): "High" | "Medium" | "Needs human review" | null {
+  const sectionMatch = content.match(/##\s+Confidence Level\s*\n\*\*(High|Medium|Needs human review)\*\*/i);
+  if (sectionMatch) {
+    const v = sectionMatch[1].toLowerCase();
+    if (v.includes("needs")) return "Needs human review";
+    if (v === "medium") return "Medium";
+    if (v === "high") return "High";
+  }
+  const inlineMatch = content.match(/confidence level[:\s*]+([^\n*\r]+)/i);
+  if (inlineMatch) {
+    const v = inlineMatch[1].trim().replace(/\*+/g, "").toLowerCase();
+    if (v.includes("needs") || v.includes("human")) return "Needs human review";
+    if (v.includes("medium")) return "Medium";
+    if (v.includes("high")) return "High";
+  }
+  return null;
+}
+
+function parseHumanJudgementPoints(content: string): string[] {
+  const block = content.match(/##\s+Points Requiring Human Judgement\s*\n([\s\S]+?)(?=\n##|$)/i);
+  if (!block) return [];
+  return block[1]
+    .split("\n")
+    .filter(l => /^[-•*]/.test(l.trim()))
+    .map(l => l.replace(/^[-•*]+\s*/, "").trim())
+    .filter(l => Boolean(l) && !l.toLowerCase().includes("none identified"))
+    .slice(0, 10);
 }
 
 function getAgentStatus(
@@ -1065,16 +1098,37 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
 
 // ── VerdictBox ────────────────────────────────────────────────────────────────
 
+const ARCHITECT_ROLES = [
+  "Lead Architect",
+  "Solution Architect",
+  "Technical Lead",
+  "Client Architecture Lead",
+] as const;
+
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
+  sessionId, jiraIssueKey, signOff, onCountersign,
 }: {
   verdict: "approved" | "conditional" | "revision";
   judgeContent: string;
   agents: AgentOutput[];
   sessionStartTime: number | null;
+  sessionId: string | null;
+  jiraIssueKey: string | null;
+  signOff: { name: string; role: string; timestamp: string } | null;
+  onCountersign: (name: string, role: string) => Promise<void>;
 }) {
+  const [signerName, setSignerName] = useState("");
+  const [signerRole, setSignerRole] = useState<string>(ARCHITECT_ROLES[0]);
+  const [submitting, setSubmitting] = useState(false);
+
   const totalMs = sessionStartTime ? Date.now() - sessionStartTime : null;
   const mustFix = parseMustFix(judgeContent);
+  const confidenceLevel = parseJudgeConfidenceLevel(judgeContent);
+  const judgementPoints = parseHumanJudgementPoints(judgeContent);
+
+  console.log("[VerdictBox] raw judge output:", judgeContent.slice(0, 500));
+  console.log("[VerdictBox] parsed confidenceLevel:", confidenceLevel, "| judgementPoints:", judgementPoints.length, judgementPoints);
 
   const colors = {
     approved:    { border: "#0fba7a", bg: "rgba(15,186,122,0.06)", icon: "✓", label: "APPROVED",                text: "#0fba7a" },
@@ -1082,7 +1136,23 @@ function VerdictBox({
     revision:    { border: "#e84040", bg: "rgba(232,64,64,0.06)",  icon: "↻", label: "REVISION REQUIRED",       text: "#e84040" },
   }[verdict];
 
+  const confidenceConfig = confidenceLevel ? {
+    "High":               { bg: "rgba(15,186,122,0.12)",  color: "#0fba7a", border: "rgba(15,186,122,0.3)"  },
+    "Medium":             { bg: "rgba(240,160,32,0.12)",  color: "#f0a020", border: "rgba(240,160,32,0.3)"  },
+    "Needs human review": { bg: "rgba(232,64,64,0.12)",   color: "#e84040", border: "rgba(232,64,64,0.3)"   },
+  }[confidenceLevel] : null;
+
   const completedAgents = agents.filter(a => a.complete && !a.error);
+
+  const handleSubmit = async () => {
+    if (!signerName.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onCountersign(signerName.trim(), signerRole);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="arboard-verdict" style={{
@@ -1092,11 +1162,27 @@ function VerdictBox({
       marginTop: 24,
       padding: "20px 24px",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 22, color: colors.text }}>{colors.icon}</span>
-        <span style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: colors.text, letterSpacing: 0.5 }}>
-          {colors.label}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", letterSpacing: 1, textTransform: "uppercase" }}>
+            Draft Recommendation
+          </span>
+          <span style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: colors.text, letterSpacing: 0.5 }}>
+            {colors.label}
+          </span>
+        </div>
+        {confidenceLevel && confidenceConfig && (
+          <span style={{
+            fontFamily: "monospace", fontSize: 11, padding: "3px 10px", borderRadius: 20,
+            background: confidenceConfig.bg, color: confidenceConfig.color,
+            border: `1px solid ${confidenceConfig.border}`,
+            fontWeight: 600,
+          }}>
+            {confidenceLevel === "Needs human review" ? "⚠ Needs human review" : `✓ Confidence: ${confidenceLevel}`}
+          </span>
+        )}
         {totalMs && (
           <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7B8DB0", marginLeft: "auto" }}>
             Round 1 · {completedAgents.length} agents · {formatDuration(totalMs)} total
@@ -1106,6 +1192,7 @@ function VerdictBox({
 
       <div style={{ height: 1, background: `${colors.border}33`, marginBottom: 14 }} />
 
+      {/* Must Fix */}
       {mustFix.length > 0 && (
         <>
           <div style={{ ...S.label, marginBottom: 8 }}>Must Fix</div>
@@ -1124,7 +1211,29 @@ function VerdictBox({
         </>
       )}
 
-      <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+      {/* Points requiring human judgement */}
+      {judgementPoints.length > 0 && (
+        <>
+          <div style={{ ...S.label, marginBottom: 8, color: "#f0a020" }}>Points Requiring Human Judgement</div>
+          <div style={{
+            padding: "12px 14px", borderRadius: 6, marginBottom: 16,
+            background: "rgba(240,160,32,0.05)",
+            borderLeft: "3px solid #f0a020",
+          }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {judgementPoints.map((point, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ color: "#f0a020", flexShrink: 0, marginTop: 1 }}>›</span>
+                  <span style={{ fontSize: 12, color: "#F0F4FF", lineHeight: 1.5 }}>{point}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
         <button style={{
           padding: "8px 18px", background: "#00c8f0", color: "#07090f",
           fontWeight: 700, fontSize: 12, borderRadius: 6, cursor: "pointer", border: "none",
@@ -1139,6 +1248,86 @@ function VerdictBox({
           }}>
             ↻ Revision Round
           </button>
+        )}
+      </div>
+
+      {/* Human sign-off section */}
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ ...S.label, color: "#9f70f5" }}>Human Sign-off</span>
+          {!signOff && (
+            <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+              — pending countersignature
+            </span>
+          )}
+        </div>
+
+        {signOff ? (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 14px", borderRadius: 6,
+            background: "rgba(15,186,122,0.08)", border: "1px solid rgba(15,186,122,0.3)",
+          }}>
+            <span style={{ color: "#0fba7a", fontSize: 16 }}>✓</span>
+            <div>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#0fba7a", fontWeight: 700 }}>
+                Countersigned by {signOff.name}, {signOff.role}
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>
+                {new Date(signOff.timestamp).toLocaleString()}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ ...S.label, fontSize: 9 }}>Architect Name</span>
+              <input
+                type="text"
+                value={signerName}
+                onChange={e => setSignerName(e.target.value)}
+                placeholder="e.g. Jane Smith"
+                style={{
+                  background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
+                  fontFamily: "system-ui, sans-serif", outline: "none", width: 200,
+                }}
+                onFocus={e => (e.target.style.borderColor = "rgba(159,112,245,0.5)")}
+                onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
+              />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ ...S.label, fontSize: 9 }}>Role</span>
+              <select
+                value={signerRole}
+                onChange={e => setSignerRole(e.target.value)}
+                style={{
+                  background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
+                  fontFamily: "system-ui, sans-serif", outline: "none", cursor: "pointer",
+                  appearance: "auto",
+                }}
+              >
+                {ARCHITECT_ROLES.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={!signerName.trim() || submitting}
+              style={{
+                padding: "8px 18px",
+                background: signerName.trim() && !submitting ? "#9f70f5" : "rgba(159,112,245,0.3)",
+                color: signerName.trim() && !submitting ? "#fff" : "rgba(255,255,255,0.4)",
+                fontWeight: 700, fontSize: 12, borderRadius: 6, border: "none",
+                cursor: signerName.trim() && !submitting ? "pointer" : "not-allowed",
+                transition: "background 0.2s, color 0.2s",
+              }}
+            >
+              {submitting ? "Signing…" : "Countersign this recommendation"}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -1285,6 +1474,9 @@ export default function ForumTestUI() {
   const [showSetupModal, setShowSetupModal] = useState(false);
 
   const [showSummaryDrawer, setShowSummaryDrawer] = useState(false);
+  const [jiraIssueKey, setJiraIssueKey] = useState<string | null>(null);
+  const [jiraIssueUrl, setJiraIssueUrl] = useState<string | null>(null);
+  const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -1467,6 +1659,12 @@ export default function ForumTestUI() {
           a.agentId === ev.agentId ? { ...a, complete: true, error: ev.error, durationMs: ev.durationMs } : a
         ));
         break;
+      case "adr_saved":
+        if (ev.jiraIssueKey) {
+          setJiraIssueKey(ev.jiraIssueKey);
+          setJiraIssueUrl(ev.jiraIssueUrl ?? null);
+        }
+        break;
       case "session_complete":
         setSessionComplete(true);
         setSessionEndTime(Date.now());
@@ -1573,7 +1771,24 @@ export default function ForumTestUI() {
     setActiveAgentIds(new Set());
     setSelectionMode(false);
     setSelectedAgentIds(new Set());
+    setJiraIssueKey(null);
+    setJiraIssueUrl(null);
+    setSignOff(null);
   };
+
+  const handleCountersign = useCallback(async (name: string, role: string) => {
+    const timestamp = new Date().toISOString();
+    const res = await fetch("/api/adr/countersign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, jiraIssueKey, architectName: name, architectRole: role, timestamp }),
+    });
+    if (!res.ok) {
+      const data = await res.json() as { error?: string };
+      throw new Error(data.error ?? "Sign-off failed");
+    }
+    setSignOff({ name, role, timestamp });
+  }, [sessionId, jiraIssueKey]);
 
   const hasDetected = uploadResult && (
     uploadResult.detectedContext.clouds.length > 0 ||
@@ -1901,7 +2116,44 @@ export default function ForumTestUI() {
                       judgeContent={judgeAgent.content}
                       agents={agents}
                       sessionStartTime={sessionStartTime}
+                      sessionId={sessionId}
+                      jiraIssueKey={jiraIssueKey}
+                      signOff={signOff}
+                      onCountersign={handleCountersign}
                     />
+                  )}
+
+                  {/* Jira ADR banner */}
+                  {jiraIssueKey && jiraIssueUrl && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: "10px 16px",
+                      border: "1px solid rgba(15,186,122,0.35)",
+                      borderRadius: 8,
+                      background: "rgba(15,186,122,0.06)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}>
+                      <span style={{ color: "#0fba7a", fontSize: 15, lineHeight: 1 }}>✓</span>
+                      <span style={{ fontFamily: "monospace", fontSize: 12, color: "#0fba7a" }}>
+                        ADR saved to Jira —
+                      </span>
+                      <a
+                        href={jiraIssueUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 12,
+                          color: "#0fba7a",
+                          textDecoration: "underline",
+                          textUnderlineOffset: 2,
+                        }}
+                      >
+                        {jiraIssueKey}
+                      </a>
+                    </div>
                   )}
 
                   {/* Stop button */}

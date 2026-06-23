@@ -328,20 +328,20 @@ Adopt a zero-trust posture for Experience Cloud:
 | Duplicate Platform Events corrupting order state | High | Idempotency key check in Apex subscriber before DML |
 | Security Health Check score degrading post-launch | Medium | Monthly automated Health Check report via Salesforce CLI |`,
 
-  "sf-judge": `## ARB Verdict
-
-**Decision: APPROVE WITH CONDITIONS**
+  "sf-judge": `## ARB Draft Recommendation
+**Recommendation: APPROVE WITH CONDITIONS**
 
 ## Summary of Findings
 Specialist agents identified a sound overall architecture — single-org, Platform Event-driven integration, LWR Experience Cloud — with several implementation risks that must be resolved before the first sprint begins. The most critical gaps are in the sharing model for \`SAPOrder__c\` (where a misconfiguration could expose order data across customers) and the absence of a Large Data Volume strategy for a dataset projected to reach tens of millions of records. The Apex patterns for Platform Event processing and bot handoff are correctly identified; the Mixed DML mitigation for Einstein Bot handoff is mandatory.
 
 ## Critical Issues (Must Fix)
+MUST FIX:
 1. **Sharing model design must be documented and reviewed before any data model deployment.** Apex-managed sharing on \`SAPOrder__c\` with Private OWD is the correct pattern, but the sharing recalculation trigger points (contact assignment, deactivation, Account merge) must be fully enumerated and tested in a sandbox with realistic user counts.
 2. **LDV strategy decision required before schema deployment.** If projected \`SAPOrder__c\` volume exceeds 5 million records within 18 months, submit a Salesforce Support skinny table request before go-live. Deploying the schema without this decision locks the team into a performance remediation later.
 3. **Platform Event dead-letter pattern must be implemented.** The integration architecture has no recovery path for failed Apex subscriber executions beyond the 9-retry window. \`IntegrationError__c\` dead-letter records are mandatory before the MuleSoft integration goes live.
 4. **Guest profile lockdown must be verified by a Salesforce-certified security review** (internal or external) before the Experience Cloud site is made public. Automated Health Check alone is insufficient for a customer-facing portal.
 
-## Conditions (Approved with Conditions)
+## Conditions (If Approved with Conditions)
 1. Deliver a **Sharing Architecture Decision Record** (ADR-001) covering \`SAPOrder__c\` OWD, Apex sharing logic, and Experience Cloud guest profile field access — reviewed by this ARB before data model deployment.
 2. Complete a **Data Volume Assessment** projecting \`SAPOrder__c\` row counts at 6, 12, and 24 months. Submit skinny table request if any projection exceeds 5M rows.
 3. Implement \`IntegrationError__c\` dead-letter object and Apex retry logic for Platform Event subscriber failures — required for MuleSoft integration UAT sign-off.
@@ -359,7 +359,19 @@ Specialist agents identified a sound overall architecture — single-org, Platfo
 | Technical Debt | 2 | Clean patterns chosen; risk is in sharing recalculation completeness |
 | Security | 4 | Guest user sharing is unproven until tested; guest profile not yet scoped |
 | Scalability | 3 | LDV strategy pending; Platform Event volume within limits today |
-| Maintainability | 2 | Declarative-first approach with Flow + LWC; Apex surface is small |`,
+| Maintainability | 2 | Declarative-first approach with Flow + LWC; Apex surface is small |
+
+## Points Requiring Human Judgement
+- **Shield Platform Encryption decision**: Agents flagged PII in delivery address fields but could not determine whether the org holds a Shield licence — a business and procurement decision the ARB cannot make.
+- **Skinny table approval timeline**: The LDV mitigation depends on Salesforce Support approving the skinny table request; the ARB cannot guarantee this will happen before go-live.
+- **Bot deflection KPI acceptance**: Whether a ≥40% deflection rate is acceptable for this client's cost model requires product owner and commercial sign-off, not a technical ruling.
+- **Guest profile security review scope**: Agents disagreed on whether an internal security review suffices or whether an external Salesforce-certified review is contractually required — this depends on client procurement and regulatory context.
+- **SAP External Object vs. in-org storage trade-off**: The cost and latency trade-off between Salesforce Connect and native object storage depends on runtime query patterns that were not benchmarked in this session.
+
+## Confidence Level
+**Medium**
+
+Rationale: Specialist agents were broadly aligned on architecture direction with no fundamental disagreements, but two unresolved risk items — the sharing model test coverage and the LDV skinny table dependency — carry enough uncertainty that a human architect must validate the conditions before build can proceed.`,
 
   "sf-scribe": `## Architecture Decision Record — Customer 360 Portal
 
