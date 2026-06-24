@@ -1,4 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { createHash } from 'crypto';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { createADRIssue, updateADRSignOff } from '@/lib/integrations/jira';
 import type { ClientConfig } from '@/lib/clients/types';
 
@@ -11,6 +12,14 @@ export interface SaveADRParams {
   clientId?: string;
   confidenceLevel?: string;
   humanJudgementPoints?: string[];
+  // Token + cost metrics
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  totalCacheReadTokens?: number;
+  totalCacheWriteTokens?: number;
+  estimatedCostUsd?: number;
+  durationSeconds?: number;
+  agentCount?: number;
 }
 
 export interface SavedADR {
@@ -25,13 +34,6 @@ export interface SavedADR {
   jiraIssueUrl?: string;
 }
 
-function tryGetSupabaseClient() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
 async function resolveJiraProjectKey(clientId?: string): Promise<string | undefined> {
   if (!clientId) return undefined;
   try {
@@ -43,12 +45,15 @@ async function resolveJiraProjectKey(clientId?: string): Promise<string | undefi
   }
 }
 
+function hashRequirement(req: string): string {
+  return createHash('sha256').update(req).digest('hex').substring(0, 16);
+}
+
 export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
   let dbId = `local-${Date.now()}`;
   let dbCreatedAt = new Date().toISOString();
 
-  // Supabase write — skipped gracefully if env vars are not set (e.g. mock / local mode)
-  const supabase = tryGetSupabaseClient();
+  const supabase = getSupabaseClient();
   if (supabase) {
     const { data, error } = await supabase
       .from('adrs')
@@ -63,7 +68,7 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
       .single();
 
     if (error) {
-      console.warn('[adr/store] Supabase write failed (non-fatal):', error.message);
+      console.warn('[adr/store] Supabase adrs write failed (non-fatal):', error.message);
     } else {
       dbId = data.id as string;
       dbCreatedAt = data.created_at as string;
@@ -74,7 +79,6 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
 
   const jiraProjectKey = await resolveJiraProjectKey(params.clientId);
 
-  // Jira write (non-blocking — never blocks session completion)
   const jiraResult = await createADRIssue({
     requirement: params.requirement,
     verdict: params.verdict,
@@ -91,6 +95,31 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
 
   if (jiraResult) {
     console.log(`[adr/store] ADR written to Jira: ${jiraResult.issueKey} — ${jiraResult.issueUrl}`);
+  }
+
+  // Non-blocking sessions record — captures metrics without gating the response
+  if (supabase) {
+    supabase.from('sessions').insert({
+      id: params.sessionId,
+      client_id: params.clientId ?? null,
+      requirement: params.requirement,
+      requirement_hash: hashRequirement(params.requirement),
+      round_number: 1,
+      status: 'completed',
+      jira_issue_key: jiraResult?.issueKey ?? null,
+      jira_issue_url: jiraResult?.issueUrl ?? null,
+      confidence_level: params.confidenceLevel ?? null,
+      verdict: params.verdict,
+      input_tokens: Math.round(params.totalInputTokens ?? 0),
+      output_tokens: Math.round(params.totalOutputTokens ?? 0),
+      cache_read_tokens: Math.round(params.totalCacheReadTokens ?? 0),
+      cache_write_tokens: Math.round(params.totalCacheWriteTokens ?? 0),
+      estimated_cost_usd: params.estimatedCostUsd ?? 0,
+      duration_seconds: Math.round(params.durationSeconds ?? 0),
+      agent_count: Math.round(params.agentCount ?? 0),
+    }).then(({ error }) => {
+      if (error) console.warn('[adr/store] sessions insert failed (non-fatal):', error.message);
+    });
   }
 
   return {
@@ -113,20 +142,27 @@ export async function countersignADR(params: {
   architectRole: string;
   timestamp: string;
 }): Promise<void> {
-  const supabase = tryGetSupabaseClient();
+  const supabase = getSupabaseClient();
   if (supabase) {
-    const { error } = await supabase
-      .from('adrs')
-      .update({
-        countersigned_by: params.architectName,
-        countersigned_role: params.architectRole,
-        countersigned_at: params.timestamp,
-      })
-      .eq('session_id', params.sessionId);
+    const [{ error: adrError }, { error: signoffError }] = await Promise.all([
+      supabase
+        .from('adrs')
+        .update({
+          countersigned_by: params.architectName,
+          countersigned_role: params.architectRole,
+          countersigned_at: params.timestamp,
+        })
+        .eq('session_id', params.sessionId),
+      supabase.from('signoffs').insert({
+        session_id: params.sessionId,
+        architect_name: params.architectName,
+        architect_role: params.architectRole,
+        signed_at: params.timestamp,
+      }),
+    ]);
 
-    if (error) {
-      console.warn('[adr/store] Supabase countersign update failed (non-fatal):', error.message);
-    }
+    if (adrError) console.warn('[adr/store] adrs countersign failed (non-fatal):', adrError.message);
+    if (signoffError) console.warn('[adr/store] signoffs insert failed (non-fatal):', signoffError.message);
   }
 
   if (params.jiraIssueKey) {

@@ -74,6 +74,26 @@ function parseMustFixForADR(content: string): string[] {
     .slice(0, 5);
 }
 
+function parseConfidenceLevelForADR(content: string): string | undefined {
+  const match = content.match(/##\s*Confidence Level\s*\n\*\*([^*]+)\*\*/i);
+  return match?.[1]?.trim();
+}
+
+function parseHumanJudgementPoints(content: string): string[] {
+  const block = content.match(/##\s*Points Requiring Human Judgement\s*\n([\s\S]+?)(?=\n##|$)/i);
+  if (!block) return [];
+  return block[1]
+    .split("\n")
+    .filter(l => l.trim().startsWith("-"))
+    .map(l => l.replace(/^-\s*/, "").trim())
+    .filter(l => Boolean(l) && !/^none identified$/i.test(l) && !/^none$/i.test(l));
+}
+
+// Haiku 4.5 pricing: $1.00 input / $5.00 output / $0.10 cache read / $1.25 cache write (per MTok)
+function estimateCostUsd(input: number, output: number, cacheRead: number, cacheWrite: number): number {
+  return input * 1e-6 + output * 5e-6 + cacheRead * 1e-7 + cacheWrite * 1.25e-6;
+}
+
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 export class ForumOrchestrator {
@@ -84,10 +104,16 @@ export class ForumOrchestrator {
 
   static async *streamForum(request: ForumRequest): AsyncGenerator<string> {
     const sessionId = randomUUID();
+    const sessionStart = Date.now();
     const domainId = request.domainId ?? "salesforce";
     const clientContext: ClientContext = request.clientContext ?? {};
     const orgContext = request.orgContext;
     const domain = getDomain(domainId);
+
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCacheWriteTokens = 0;
 
     // ── Impact Analysis ───────────────────────────────────────────────────────
     let selectedAgentIds = request.agentIds;
@@ -150,6 +176,12 @@ export class ForumOrchestrator {
             designerUsage = chunk.__usage;
           }
         }
+        if (designerUsage) {
+          totalInputTokens += designerUsage.inputTokens;
+          totalOutputTokens += designerUsage.outputTokens;
+          totalCacheReadTokens += designerUsage.cacheReadTokens ?? 0;
+          totalCacheWriteTokens += designerUsage.cacheWriteTokens ?? 0;
+        }
         yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens, outputTokens: designerUsage?.outputTokens, cacheReadTokens: designerUsage?.cacheReadTokens, cacheWriteTokens: designerUsage?.cacheWriteTokens })}\n\n`;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -180,6 +212,12 @@ export class ForumOrchestrator {
             } else {
               usage = chunk.__usage;
             }
+          }
+          if (usage) {
+            totalInputTokens += usage.inputTokens;
+            totalOutputTokens += usage.outputTokens;
+            totalCacheReadTokens += usage.cacheReadTokens ?? 0;
+            totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
           specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
@@ -214,6 +252,12 @@ export class ForumOrchestrator {
             }
           }
           closingOutputs[agent.id] = agentContent;
+          if (usage) {
+            totalInputTokens += usage.inputTokens;
+            totalOutputTokens += usage.outputTokens;
+            totalCacheReadTokens += usage.cacheReadTokens ?? 0;
+            totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
+          }
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -229,11 +273,21 @@ export class ForumOrchestrator {
       let adrJiraUrl: string | undefined;
       try {
         const saved = await saveADR({
-          requirement:   request.input,
-          verdict:       parseVerdictForADR(judgeContent),
-          scribeNotes:   scribeContent,
-          mustFixIssues: parseMustFixForADR(judgeContent),
+          requirement:          request.input,
+          verdict:              parseVerdictForADR(judgeContent),
+          scribeNotes:          scribeContent,
+          mustFixIssues:        parseMustFixForADR(judgeContent),
+          humanJudgementPoints: parseHumanJudgementPoints(judgeContent),
+          confidenceLevel:      parseConfidenceLevelForADR(judgeContent),
           sessionId,
+          clientId:             process.env.CLIENT_ID,
+          totalInputTokens,
+          totalOutputTokens,
+          totalCacheReadTokens,
+          totalCacheWriteTokens,
+          estimatedCostUsd:     estimateCostUsd(totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheWriteTokens),
+          durationSeconds:      (Date.now() - sessionStart) / 1000,
+          agentCount:           allAgents.length,
         });
         adrJiraKey = saved.jiraIssueKey;
         adrJiraUrl = saved.jiraIssueUrl;
