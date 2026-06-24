@@ -1107,7 +1107,7 @@ const ARCHITECT_ROLES = [
 
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
-  sessionId, jiraIssueKey, signOff, onCountersign,
+  sessionId, jiraIssueKey, signOff, onCountersign, matchedPatterns,
 }: {
   verdict: "approved" | "conditional" | "revision";
   judgeContent: string;
@@ -1117,8 +1117,10 @@ function VerdictBox({
   jiraIssueKey: string | null;
   signOff: { name: string; role: string; timestamp: string } | null;
   onCountersign: (name: string, role: string) => Promise<void>;
+  matchedPatterns: { id: string; title: string; severity: string }[];
 }) {
   const [signerName, setSignerName] = useState("");
+  const [showPatterns, setShowPatterns] = useState(false);
   const [signerRole, setSignerRole] = useState<string>(ARCHITECT_ROLES[0]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1183,12 +1185,47 @@ function VerdictBox({
             {confidenceLevel === "Needs human review" ? "⚠ Needs human review" : `✓ Confidence: ${confidenceLevel}`}
           </span>
         )}
+        {matchedPatterns.length > 0 && (
+          <button
+            onClick={() => setShowPatterns(p => !p)}
+            style={{
+              fontFamily: "monospace", fontSize: 10, padding: "3px 10px", borderRadius: 20,
+              background: "rgba(90,106,138,0.12)", color: "#7B8DB0",
+              border: "1px solid rgba(90,106,138,0.3)",
+              cursor: "pointer",
+            }}
+          >
+            {matchedPatterns.length} failure pattern{matchedPatterns.length !== 1 ? "s" : ""} matched
+          </button>
+        )}
         {totalMs && (
           <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7B8DB0", marginLeft: "auto" }}>
             Round 1 · {completedAgents.length} agents · {formatDuration(totalMs)} total
           </span>
         )}
       </div>
+
+      {showPatterns && matchedPatterns.length > 0 && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 6, background: "rgba(90,106,138,0.07)", border: "1px solid rgba(90,106,138,0.2)" }}>
+          <div style={{ ...S.label, marginBottom: 8, fontSize: 9 }}>Referenced SI Failure Patterns</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {matchedPatterns.map(p => {
+              const sevColor = p.severity === "high" ? "#e84040" : p.severity === "medium" ? "#f0a020" : "#0fba7a";
+              return (
+                <div key={p.id} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: sevColor, flexShrink: 0, minWidth: 52 }}>
+                    {p.id}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#8a9ab8", lineHeight: 1.4 }}>{p.title}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 9, color: sevColor, flexShrink: 0, marginLeft: "auto" }}>
+                    {p.severity}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{ height: 1, background: `${colors.border}33`, marginBottom: 14 }} />
 
@@ -1477,6 +1514,7 @@ export default function ForumTestUI() {
   const [jiraIssueKey, setJiraIssueKey] = useState<string | null>(null);
   const [jiraIssueUrl, setJiraIssueUrl] = useState<string | null>(null);
   const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
+  const [patternDetails, setPatternDetails] = useState<{ id: string; title: string; severity: string }[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -1518,6 +1556,32 @@ export default function ForumTestUI() {
 
   const progressPct = agents.length === 0 ? 0
     : (completedAgents.length / Math.max(agents.length, agentCount)) * 100;
+
+  const matchedPatternIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of agents) {
+      for (const m of (a.content.match(/FP-\d+/g) ?? [])) ids.add(m);
+    }
+    return Array.from(ids);
+  }, [agents]);
+
+  const matchedPatternIdsRef = useRef<string[]>([]);
+  matchedPatternIdsRef.current = matchedPatternIds;
+
+  useEffect(() => {
+    if (!sessionComplete) return;
+    const ids = matchedPatternIdsRef.current;
+    console.log("[patterns] session complete — matched IDs:", ids.length > 0 ? ids : "(none)");
+    if (ids.length === 0) return;
+    fetch(`/api/patterns?ids=${ids.join(",")}`)
+      .then(r => r.json())
+      .then((data: { id: string; title: string; severity: string }[]) => {
+        console.log("[patterns] resolved details:", data);
+        setPatternDetails(data);
+      })
+      .catch(() => {/* non-fatal */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionComplete]);
 
   // Scroll forum panel to bottom as tokens arrive
   useEffect(() => {
@@ -1774,6 +1838,7 @@ export default function ForumTestUI() {
     setJiraIssueKey(null);
     setJiraIssueUrl(null);
     setSignOff(null);
+    setPatternDetails([]);
   };
 
   const handleCountersign = useCallback(async (name: string, role: string) => {
@@ -2120,6 +2185,7 @@ export default function ForumTestUI() {
                       jiraIssueKey={jiraIssueKey}
                       signOff={signOff}
                       onCountersign={handleCountersign}
+                      matchedPatterns={patternDetails}
                     />
                   )}
 

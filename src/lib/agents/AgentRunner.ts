@@ -4,6 +4,7 @@ import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { defaultPipeline } from "@/lib/middleware";
 import { isMockMode, mockStream, getMockResponse } from "@/lib/mock/mockMode";
+import { getRelevantPatterns, formatPatternBlock } from "@/lib/patternRetrieval";
 
 const anthropic = new Anthropic();
 
@@ -27,11 +28,17 @@ export class AgentRunner {
     orgContext?: OrgContext,
   ): AsyncGenerator<StreamChunk> {
     if (isMockMode()) {
+      console.log(`[patterns] MOCK MODE — skipping injection for agent ${agent.name}`);
       yield* mockStream(getMockResponse(agent.id));
       return;
     }
 
-    const systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext, undefined, orgContext);
+    let systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext, undefined, orgContext);
+
+    const patterns = await getRelevantPatterns(agent.id);
+    console.log(`[patterns] injecting for agent ${agent.name}: ${patterns.map(p => p.id).join(", ") || "none"}`);
+    const patternBlock = formatPatternBlock(patterns);
+    if (patternBlock) systemPrompt = `${systemPrompt}\n\n${patternBlock}`;
 
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
