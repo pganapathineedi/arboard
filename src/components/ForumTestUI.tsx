@@ -2017,66 +2017,71 @@ export default function ForumTestUI() {
               modelLabel={MODEL_CONFIG[model].label}
             />}
 
-            {/* Upload zone */}
+            {/* Upload zone — hidden once a file is loaded */}
             <div
               onDragOver={e => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
               onClick={() => { if (!uploadResult && !uploading) fileInputRef.current?.click(); }}
               style={{
+                display: uploadResult ? "none" : "block",
                 border: `2px dashed ${dragging ? "#00c8f0" : "rgba(255,255,255,0.08)"}`,
                 borderRadius: 8, padding: "12px 16px", marginBottom: 12,
                 background: dragging ? "rgba(0,200,240,0.03)" : "transparent",
                 transition: "border-color 0.2s",
-                cursor: uploadResult || uploading ? "default" : "pointer",
+                cursor: uploading ? "default" : "pointer",
               }}
             >
               <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                 onClick={e => e.stopPropagation()}
                 disabled={uploading} />
 
-              {uploadResult ? (
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Chip
-                      label={FORMAT_LABELS[uploadResult.format] ?? uploadResult.format.toUpperCase()}
-                      color="#00c8f0"
-                    />
-                    <span style={{ fontSize: 12, color: "#F0F4FF" }}>{uploadResult.filename}</span>
-                    <span style={{ fontSize: 11, color: "#7B8DB0" }}>{formatBytes(uploadResult.fileSize)}</span>
-                    {uploadResult.wasChunked && <Chip label="summarised" color="#f0a020" />}
-                    <button onClick={clearDocument} style={{
-                      marginLeft: "auto", fontSize: 11, color: "#7B8DB0",
-                      background: "none", border: "none", cursor: "pointer",
-                    }}>Clear ✕</button>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#7B8DB0", marginTop: 6 }}>
-                    Document extracted — will be used as the review requirement
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
-                      border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-                      fontSize: 12, color: "#F0F4FF", background: "#161d2e", cursor: "pointer",
-                    }}
-                  >
-                    {uploading
-                      ? <><span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#00c8f0", display: "inline-block" }} /> Extracting…</>
-                      : "↑ Upload Document"}
-                  </button>
-                  <span style={{ fontSize: 11, color: "#7B8DB0" }}>
-                    Drag & drop — PDF · DOC · DOCX
-                  </span>
-                  {uploadError && <span style={{ fontSize: 11, color: "#e84040", marginLeft: "auto" }}>{uploadError}</span>}
-                </div>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <button
+                  onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                  disabled={uploading}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
+                    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
+                    fontSize: 12, color: "#F0F4FF", background: "#161d2e", cursor: "pointer",
+                  }}
+                >
+                  {uploading
+                    ? <><span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#00c8f0", display: "inline-block" }} /> Extracting…</>
+                    : "↑ Upload Document"}
+                </button>
+                <span style={{ fontSize: 11, color: "#7B8DB0" }}>
+                  Drag & drop — PDF · DOC · DOCX
+                </span>
+                {uploadError && <span style={{ fontSize: 11, color: "#e84040", marginLeft: "auto" }}>{uploadError}</span>}
+              </div>
             </div>
+
+            {/* File card — shown after a successful upload */}
+            {uploadResult && (
+              <div style={{
+                border: "2px dashed rgba(255,255,255,0.08)",
+                borderRadius: 8, padding: "12px 16px", marginBottom: 12,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Chip
+                    label={FORMAT_LABELS[uploadResult.format] ?? uploadResult.format.toUpperCase()}
+                    color="#00c8f0"
+                  />
+                  <span style={{ fontSize: 12, color: "#F0F4FF" }}>{uploadResult.filename}</span>
+                  <span style={{ fontSize: 11, color: "#7B8DB0" }}>{formatBytes(uploadResult.fileSize)}</span>
+                  {uploadResult.wasChunked && <Chip label="summarised" color="#f0a020" />}
+                  <button onClick={clearDocument} style={{
+                    marginLeft: "auto", fontSize: 11, color: "#7B8DB0",
+                    background: "none", border: "none", cursor: "pointer",
+                  }}>Clear ✕</button>
+                </div>
+                <div style={{ fontSize: 11, color: "#7B8DB0", marginTop: 6 }}>
+                  Document extracted — will be used as the review requirement
+                </div>
+              </div>
+            )}
 
             {/* Detected context */}
             {uploadResult && hasDetected && (
