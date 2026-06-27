@@ -316,22 +316,26 @@ export class ForumOrchestrator {
         }
       }
 
-      // ── ADR save — fires after judge + scribe content is collected ─────────
+      // ── Save session record (no Jira — gated by EndorsementPanel) ────────
       const judgeContent  = closingOutputs["sf-judge"]  ?? "";
       const scribeContent = closingOutputs["sf-scribe"] ?? "";
 
-      let adrJiraKey: string | undefined;
-      let adrJiraUrl: string | undefined;
+      const parsedVerdict              = parseVerdictForADR(judgeContent);
+      const parsedMustFix              = parseMustFixForADR(judgeContent);
+      const parsedConfidenceLevel      = parseConfidenceLevelForADR(judgeContent);
+      const parsedHumanJudgementPoints = parseHumanJudgementPoints(judgeContent);
+
       try {
-        const saved = await saveADR({
+        await saveADR({
           requirement:          request.input,
-          verdict:              parseVerdictForADR(judgeContent),
+          verdict:              parsedVerdict,
           scribeNotes:          scribeContent,
-          mustFixIssues:        parseMustFixForADR(judgeContent),
-          humanJudgementPoints: parseHumanJudgementPoints(judgeContent),
-          confidenceLevel:      parseConfidenceLevelForADR(judgeContent),
+          mustFixIssues:        parsedMustFix,
+          humanJudgementPoints: parsedHumanJudgementPoints,
+          confidenceLevel:      parsedConfidenceLevel,
           sessionId,
           clientId:             process.env.CLIENT_ID,
+          skipJira:             true,
           totalInputTokens,
           totalOutputTokens,
           totalCacheReadTokens,
@@ -340,13 +344,21 @@ export class ForumOrchestrator {
           durationSeconds:      (Date.now() - sessionStart) / 1000,
           agentCount:           allAgents.length,
         });
-        adrJiraKey = saved.jiraIssueKey;
-        adrJiraUrl = saved.jiraIssueUrl;
       } catch (err) {
         console.error("[orchestrator] saveADR failed:", err instanceof Error ? err.message : err);
       }
 
-      yield `data: ${JSON.stringify({ type: "adr_saved", jiraIssueKey: adrJiraKey ?? null, jiraIssueUrl: adrJiraUrl ?? null })}\n\n`;
+      yield `data: ${JSON.stringify({ type: "adr_saved", jiraIssueKey: null, jiraIssueUrl: null })}\n\n`;
+      yield `data: ${JSON.stringify({
+        type:                 "pending_endorsement",
+        sessionId,
+        requirement:          request.input,
+        verdict:              parsedVerdict,
+        confidenceLevel:      parsedConfidenceLevel ?? "Medium",
+        humanJudgementPoints: parsedHumanJudgementPoints,
+        scribeNotes:          scribeContent,
+        mustFixIssues:        parsedMustFix,
+      })}\n\n`;
     }
 
     yield `data: ${JSON.stringify({ type: "session_complete", sessionId })}\n\n`;

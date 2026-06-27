@@ -7,6 +7,39 @@ export interface JiraIssueParams {
   projectKey?: string;
   confidenceLevel?: string;
   humanJudgementPoints?: string[];
+  assigneeAccountId?: string;
+  endorsementType?: 'countersigned' | 'assigned_for_review';
+}
+
+export interface JiraMember {
+  accountId:    string;
+  displayName:  string;
+  emailAddress: string;
+}
+
+export async function fetchProjectMembers(): Promise<JiraMember[]> {
+  const domain     = process.env.JIRA_DOMAIN;
+  const email      = process.env.JIRA_EMAIL;
+  const token      = process.env.JIRA_API_TOKEN;
+  const projectKey = process.env.JIRA_PROJECT_KEY;
+
+  if (!domain || !email || !token || !projectKey) return [];
+
+  try {
+    const url = `https://${domain}/rest/api/3/user/assignable/search?project=${projectKey}&maxResults=50`;
+    const res = await fetch(url, { headers: buildHeaders(email, token) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as Array<{ accountId?: string; displayName?: string; emailAddress?: string }>;
+    return data
+      .filter(u => u.accountId && u.displayName)
+      .map(u => ({
+        accountId:    u.accountId!,
+        displayName:  u.displayName!,
+        emailAddress: u.emailAddress ?? '',
+      }));
+  } catch {
+    return [];
+  }
 }
 
 export interface JiraResult {
@@ -183,16 +216,20 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
   const summary = `[ARBoard ADR] ${params.requirement.slice(0, 80)}`;
   const verdictLabel = verdictToLabel(params.verdict);
 
-  const body = {
-    fields: {
-      project: { key: projectKey },
-      summary,
-      issuetype: { name: 'Task' },
-      priority: { name: verdictToPriority(params.verdict) },
-      labels: ['arboard-adr', verdictLabel],
-      description: buildADF(params),
-    },
+  const labels = ['arboard-adr', verdictLabel];
+  if (params.endorsementType === 'countersigned') labels.push('arboard-signed');
+
+  const fields: Record<string, unknown> = {
+    project: { key: projectKey },
+    summary,
+    issuetype: { name: 'Task' },
+    priority: { name: verdictToPriority(params.verdict) },
+    labels,
+    description: buildADF(params),
   };
+  if (params.assigneeAccountId) fields.assignee = { accountId: params.assigneeAccountId };
+
+  const body = { fields };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => {
@@ -219,6 +256,29 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
 
     const data = (await response.json()) as { key: string };
     console.log('[jira] issue created successfully', { issueKey: data.key });
+
+    if (params.humanJudgementPoints && params.humanJudgementPoints.length > 0) {
+      const commentLines = [
+        'Points Requiring Human Judgement',
+        '',
+        ...params.humanJudgementPoints.map(p => `- ${p}`),
+      ].join('\n');
+      const commentBody = {
+        body: {
+          version: 1, type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: commentLines }],
+          }],
+        },
+      };
+      await fetch(`https://${domain}/rest/api/3/issue/${data.key}/comment`, {
+        method: 'POST',
+        headers: buildHeaders(email, token),
+        body: JSON.stringify(commentBody),
+      }).catch(err => { console.warn('[jira] human judgement comment failed:', err); });
+    }
+
     return { issueKey: data.key, issueUrl: `https://${domain}/browse/${data.key}` };
   } finally {
     clearTimeout(timeout);

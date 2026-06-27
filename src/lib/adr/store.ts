@@ -12,6 +12,7 @@ export interface SaveADRParams {
   clientId?: string;
   confidenceLevel?: string;
   humanJudgementPoints?: string[];
+  skipJira?: boolean;
   // Token + cost metrics
   totalInputTokens?: number;
   totalOutputTokens?: number;
@@ -79,19 +80,21 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
 
   const jiraProjectKey = await resolveJiraProjectKey(params.clientId);
 
-  const jiraResult = await createADRIssue({
-    requirement: params.requirement,
-    verdict: params.verdict,
-    scribeNotes: params.scribeNotes,
-    mustFixIssues: params.mustFixIssues,
-    sessionId: params.sessionId,
-    projectKey: jiraProjectKey,
-    confidenceLevel: params.confidenceLevel,
-    humanJudgementPoints: params.humanJudgementPoints,
-  }).catch(err => {
-    console.error('[adr/store] Jira write failed (non-blocking):', err);
-    return null;
-  });
+  const jiraResult = params.skipJira
+    ? null
+    : await createADRIssue({
+        requirement: params.requirement,
+        verdict: params.verdict,
+        scribeNotes: params.scribeNotes,
+        mustFixIssues: params.mustFixIssues,
+        sessionId: params.sessionId,
+        projectKey: jiraProjectKey,
+        confidenceLevel: params.confidenceLevel,
+        humanJudgementPoints: params.humanJudgementPoints,
+      }).catch(err => {
+        console.error('[adr/store] Jira write failed (non-blocking):', err);
+        return null;
+      });
 
   if (jiraResult) {
     console.log(`[adr/store] ADR written to Jira: ${jiraResult.issueKey} — ${jiraResult.issueUrl}`);

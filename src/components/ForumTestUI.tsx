@@ -7,6 +7,7 @@ import { SalesforceOrgBanner } from "@/components/SalesforceOrgBanner";
 import { OrgHealthPanel } from "@/components/OrgHealthPanel";
 import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
 import { ClientContextBanner } from "@/components/ClientContextBanner";
+import { EndorsementPanel } from "@/components/EndorsementPanel";
 
 // ── Local Types ───────────────────────────────────────────────────────────────
 
@@ -42,6 +43,22 @@ interface SSEEvent {
   cacheWriteTokens?: number;
   jiraIssueKey?: string | null;
   jiraIssueUrl?: string | null;
+  // pending_endorsement fields
+  requirement?: string;
+  verdict?: string;
+  confidenceLevel?: string;
+  humanJudgementPoints?: string[];
+  scribeNotes?: string;
+  mustFixIssues?: string[];
+}
+
+interface PendingEndorsement {
+  requirement:          string;
+  verdict:              string;
+  confidenceLevel:      string;
+  humanJudgementPoints: string[];
+  scribeNotes:          string;
+  mustFixIssues:        string[];
 }
 
 interface AppliedCtx {
@@ -1108,7 +1125,7 @@ const ARCHITECT_ROLES = [
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
   sessionId, jiraIssueKey, signOff, onCountersign, matchedPatterns,
-  revisionRound, onRevisionRound,
+  revisionRound, onRevisionRound, hideSignOff,
 }: {
   verdict: "approved" | "conditional" | "revision";
   judgeContent: string;
@@ -1121,6 +1138,7 @@ function VerdictBox({
   matchedPatterns: { id: string; title: string; severity: string }[];
   revisionRound: number;
   onRevisionRound: () => void;
+  hideSignOff?: boolean;
 }) {
   const [signerName, setSignerName] = useState("");
   const [showPatterns, setShowPatterns] = useState(false);
@@ -1297,85 +1315,87 @@ function VerdictBox({
         )}
       </div>
 
-      {/* Human sign-off section */}
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <span style={{ ...S.label, color: "#9f70f5" }}>Human Sign-off</span>
-          {!signOff && (
-            <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
-              — pending countersignature
-            </span>
-          )}
-        </div>
-
-        {signOff ? (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 14px", borderRadius: 6,
-            background: "rgba(15,186,122,0.08)", border: "1px solid rgba(15,186,122,0.3)",
-          }}>
-            <span style={{ color: "#0fba7a", fontSize: 16 }}>✓</span>
-            <div>
-              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#0fba7a", fontWeight: 700 }}>
-                Countersigned by {signOff.name}, {signOff.role}
-              </div>
-              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>
-                {new Date(signOff.timestamp).toLocaleString()}
-              </div>
-            </div>
+      {/* Human sign-off section — hidden when EndorsementPanel takes over */}
+      {!hideSignOff && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ ...S.label, color: "#9f70f5" }}>Human Sign-off</span>
+            {!signOff && (
+              <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5a6a8a" }}>
+                — pending countersignature
+              </span>
+            )}
           </div>
-        ) : (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ ...S.label, fontSize: 9 }}>Architect Name</span>
-              <input
-                type="text"
-                value={signerName}
-                onChange={e => setSignerName(e.target.value)}
-                placeholder="e.g. Jane Smith"
-                style={{
-                  background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
-                  fontFamily: "system-ui, sans-serif", outline: "none", width: 200,
-                }}
-                onFocus={e => (e.target.style.borderColor = "rgba(159,112,245,0.5)")}
-                onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
-              />
+
+          {signOff ? (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px", borderRadius: 6,
+              background: "rgba(15,186,122,0.08)", border: "1px solid rgba(15,186,122,0.3)",
+            }}>
+              <span style={{ color: "#0fba7a", fontSize: 16 }}>✓</span>
+              <div>
+                <div style={{ fontFamily: "monospace", fontSize: 12, color: "#0fba7a", fontWeight: 700 }}>
+                  Countersigned by {signOff.name}, {signOff.role}
+                </div>
+                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>
+                  {new Date(signOff.timestamp).toLocaleString()}
+                </div>
+              </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ ...S.label, fontSize: 9 }}>Role</span>
-              <select
-                value={signerRole}
-                onChange={e => setSignerRole(e.target.value)}
+          ) : (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ ...S.label, fontSize: 9 }}>Architect Name</span>
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={e => setSignerName(e.target.value)}
+                  placeholder="e.g. Jane Smith"
+                  style={{
+                    background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
+                    fontFamily: "system-ui, sans-serif", outline: "none", width: 200,
+                  }}
+                  onFocus={e => (e.target.style.borderColor = "rgba(159,112,245,0.5)")}
+                  onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ ...S.label, fontSize: 9 }}>Role</span>
+                <select
+                  value={signerRole}
+                  onChange={e => setSignerRole(e.target.value)}
+                  style={{
+                    background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
+                    fontFamily: "system-ui, sans-serif", outline: "none", cursor: "pointer",
+                    appearance: "auto",
+                  }}
+                >
+                  {ARCHITECT_ROLES.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleSubmit}
+                disabled={!signerName.trim() || submitting}
                 style={{
-                  background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "#F0F4FF",
-                  fontFamily: "system-ui, sans-serif", outline: "none", cursor: "pointer",
-                  appearance: "auto",
+                  padding: "8px 18px",
+                  background: signerName.trim() && !submitting ? "#9f70f5" : "rgba(159,112,245,0.3)",
+                  color: signerName.trim() && !submitting ? "#fff" : "rgba(255,255,255,0.4)",
+                  fontWeight: 700, fontSize: 12, borderRadius: 6, border: "none",
+                  cursor: signerName.trim() && !submitting ? "pointer" : "not-allowed",
+                  transition: "background 0.2s, color 0.2s",
                 }}
               >
-                {ARCHITECT_ROLES.map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
+                {submitting ? "Signing…" : "Countersign this recommendation"}
+              </button>
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={!signerName.trim() || submitting}
-              style={{
-                padding: "8px 18px",
-                background: signerName.trim() && !submitting ? "#9f70f5" : "rgba(159,112,245,0.3)",
-                color: signerName.trim() && !submitting ? "#fff" : "rgba(255,255,255,0.4)",
-                fontWeight: 700, fontSize: 12, borderRadius: 6, border: "none",
-                cursor: signerName.trim() && !submitting ? "pointer" : "not-allowed",
-                transition: "background 0.2s, color 0.2s",
-              }}
-            >
-              {submitting ? "Signing…" : "Countersign this recommendation"}
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1525,8 +1545,9 @@ export default function ForumTestUI() {
   const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
   const [patternDetails, setPatternDetails] = useState<{ id: string; title: string; severity: string }[]>([]);
 
-  const [revisionRound, setRevisionRound]       = useState(0);
-  const [previousFeedback, setPreviousFeedback] = useState("");
+  const [revisionRound, setRevisionRound]             = useState(0);
+  const [previousFeedback, setPreviousFeedback]       = useState("");
+  const [pendingEndorsement, setPendingEndorsement]   = useState<PendingEndorsement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -1749,6 +1770,16 @@ export default function ForumTestUI() {
           setJiraIssueUrl(ev.jiraIssueUrl ?? null);
         }
         break;
+      case "pending_endorsement":
+        setPendingEndorsement({
+          requirement:          ev.requirement          ?? "",
+          verdict:              ev.verdict              ?? "",
+          confidenceLevel:      ev.confidenceLevel      ?? "Medium",
+          humanJudgementPoints: ev.humanJudgementPoints ?? [],
+          scribeNotes:          ev.scribeNotes          ?? "",
+          mustFixIssues:        ev.mustFixIssues        ?? [],
+        });
+        break;
       case "session_complete":
         setSessionComplete(true);
         setSessionEndTime(Date.now());
@@ -1864,6 +1895,7 @@ export default function ForumTestUI() {
     setPatternDetails([]);
     setRevisionRound(0);
     setPreviousFeedback("");
+    setPendingEndorsement(null);
   };
 
   const handleCountersign = useCallback(async (name: string, role: string) => {
@@ -2233,12 +2265,41 @@ export default function ForumTestUI() {
                       onCountersign={handleCountersign}
                       matchedPatterns={patternDetails}
                       revisionRound={revisionRound}
+                      hideSignOff={!!pendingEndorsement}
                       onRevisionRound={() => {
                         const nextRound = revisionRound + 1;
                         setRevisionRound(nextRound);
                         run({ revisionRound: nextRound, previousFeedback });
                       }}
                     />
+                  )}
+
+                  {/* Endorsement Panel */}
+                  {sessionComplete && pendingEndorsement && (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 16px" }}>
+                        <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+                        <span style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: 1.2, color: "#7B8DB0", textTransform: "uppercase" }}>
+                          Endorsement Decision
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
+                      </div>
+                      <EndorsementPanel
+                        sessionId={sessionId ?? ""}
+                        confidence={pendingEndorsement.confidenceLevel}
+                        verdictSummary={pendingEndorsement.verdict}
+                        humanJudgementPoints={pendingEndorsement.humanJudgementPoints}
+                        adrContent={judgeAgent?.content ?? ""}
+                        requirement={pendingEndorsement.requirement}
+                        verdict={pendingEndorsement.verdict}
+                        scribeNotes={pendingEndorsement.scribeNotes}
+                        mustFixIssues={pendingEndorsement.mustFixIssues}
+                        onEndorsed={(key, url) => {
+                          setJiraIssueKey(key);
+                          setJiraIssueUrl(url);
+                        }}
+                      />
+                    </>
                   )}
 
                   {/* Jira ADR banner */}
