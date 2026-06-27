@@ -669,7 +669,7 @@ function AgentSelectorPanel({
             </span>
           </div>
           <button
-            onClick={onRun}
+            onClick={() => onRun()}
             disabled={selectedAgentIds.size === 0}
             style={{
               padding: "10px 28px", background: "#00c8f0", color: "#07090f",
