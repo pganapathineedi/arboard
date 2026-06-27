@@ -1977,18 +1977,23 @@ export default function ForumTestUI() {
                 disabled={uploading} />
 
               {uploadResult ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Chip
-                    label={FORMAT_LABELS[uploadResult.format] ?? uploadResult.format.toUpperCase()}
-                    color="#00c8f0"
-                  />
-                  <span style={{ fontSize: 12, color: "#F0F4FF" }}>{uploadResult.filename}</span>
-                  <span style={{ fontSize: 11, color: "#7B8DB0" }}>{formatBytes(uploadResult.fileSize)}</span>
-                  {uploadResult.wasChunked && <Chip label="summarised" color="#f0a020" />}
-                  <button onClick={clearDocument} style={{
-                    marginLeft: "auto", fontSize: 11, color: "#7B8DB0",
-                    background: "none", border: "none", cursor: "pointer",
-                  }}>Clear ✕</button>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Chip
+                      label={FORMAT_LABELS[uploadResult.format] ?? uploadResult.format.toUpperCase()}
+                      color="#00c8f0"
+                    />
+                    <span style={{ fontSize: 12, color: "#F0F4FF" }}>{uploadResult.filename}</span>
+                    <span style={{ fontSize: 11, color: "#7B8DB0" }}>{formatBytes(uploadResult.fileSize)}</span>
+                    {uploadResult.wasChunked && <Chip label="summarised" color="#f0a020" />}
+                    <button onClick={clearDocument} style={{
+                      marginLeft: "auto", fontSize: 11, color: "#7B8DB0",
+                      background: "none", border: "none", cursor: "pointer",
+                    }}>Clear ✕</button>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#7B8DB0", marginTop: 6 }}>
+                    Document extracted — will be used as the review requirement
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -2066,24 +2071,26 @@ export default function ForumTestUI() {
               <OrgHealthPanel orgContext={orgContext} />
             )}
 
-            {/* Textarea */}
-            <div style={{ marginBottom: 12 }}>
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder="Describe your Salesforce architecture challenge or upload a document above…"
-                style={{
-                  width: "100%", height: 160, resize: "vertical",
-                  background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 8, padding: 16, fontSize: 14, color: "#F0F4FF",
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                  outline: "none", lineHeight: 1.6,
-                  transition: "border-color 0.2s",
-                }}
-                onFocus={e => (e.target.style.borderColor = "rgba(0,200,240,0.4)")}
-                onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.07)")}
-              />
-            </div>
+            {/* Textarea — hidden when a document is loaded */}
+            {!uploadResult && (
+              <div style={{ marginBottom: 12 }}>
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder="Describe your Salesforce architecture challenge or upload a document above…"
+                  style={{
+                    width: "100%", height: 160, resize: "vertical",
+                    background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 8, padding: 16, fontSize: 14, color: "#F0F4FF",
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    outline: "none", lineHeight: 1.6,
+                    transition: "border-color 0.2s",
+                  }}
+                  onFocus={e => (e.target.style.borderColor = "rgba(0,200,240,0.4)")}
+                  onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.07)")}
+                />
+              </div>
+            )}
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button
