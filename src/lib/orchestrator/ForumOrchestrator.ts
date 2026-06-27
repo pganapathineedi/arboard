@@ -6,9 +6,18 @@ import { AgentRunner } from "@/lib/agents/AgentRunner";
 import type { UsageData } from "@/lib/agents/AgentRunner";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
 import { saveADR } from "@/lib/adr/store";
+import { retrieveMemory, buildAllAgentMemoryBlocks } from "@/lib/memory";
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
+
+function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBlock?: string | null): AgentConfig {
+  const overrides: Partial<AgentConfig> = {};
+  if (request.modelOverride) overrides.model = request.modelOverride;
+  if (request.orgContextStr) overrides.orgContext = request.orgContextStr;
+  if (memoryBlock) overrides.memoryBlock = memoryBlock;
+  return Object.keys(overrides).length > 0 ? { ...agent, ...overrides } : agent;
+}
 
 // ── Input builders ────────────────────────────────────────────────────────────
 
@@ -115,6 +124,13 @@ export class ForumOrchestrator {
     let totalCacheReadTokens = 0;
     let totalCacheWriteTokens = 0;
 
+    // ── Memory retrieval ──────────────────────────────────────────────────────
+    const memory = await retrieveMemory(request.input, process.env.CLIENT_ID ?? 'default');
+    const memoryBlocks = buildAllAgentMemoryBlocks(memory);
+    if (memory.relevantADRs.length > 0) {
+      console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
+    }
+
     // ── Impact Analysis ───────────────────────────────────────────────────────
     let selectedAgentIds = request.agentIds;
 
@@ -153,13 +169,11 @@ export class ForumOrchestrator {
     if (!usePhasedFlow) {
       // ── Flat fallback (no designer selected) ─────────────────────────────
       for (const agent of allAgents) {
-        yield* ForumOrchestrator.runAgent(agent, request, clientContext, sessionId, domainId, orgContext);
+        yield* ForumOrchestrator.runAgent(agent, request, clientContext, sessionId, domainId, orgContext, memoryBlocks[agent.id]);
       }
     } else {
       // ── Phase 1: Designer ─────────────────────────────────────────────────
-      const effectiveDesigner = request.modelOverride
-        ? { ...designer, model: request.modelOverride }
-        : designer;
+      const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id]);
 
       yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
 
@@ -194,9 +208,7 @@ export class ForumOrchestrator {
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
       for (const agent of specialists) {
-        const effectiveAgent = request.modelOverride
-          ? { ...agent, model: request.modelOverride }
-          : agent;
+        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id]);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -232,9 +244,7 @@ export class ForumOrchestrator {
       const closingOutputs: Record<string, string> = {};
 
       for (const agent of closing) {
-        const effectiveAgent = request.modelOverride
-          ? { ...agent, model: request.modelOverride }
-          : agent;
+        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id]);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -309,10 +319,9 @@ export class ForumOrchestrator {
     sessionId: string,
     domainId: string,
     orgContext: OrgContext | undefined,
+    memoryBlock?: string | null,
   ): AsyncGenerator<string> {
-    const effectiveAgent = request.modelOverride
-      ? { ...agent, model: request.modelOverride }
-      : agent;
+    const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlock);
 
     yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 

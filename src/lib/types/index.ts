@@ -15,6 +15,8 @@ export interface AgentConfig {
   model: string;
   maxTokens: number;
   temperature?: number;
+  orgContext?: string;   // formatted live org context injected at request time
+  memoryBlock?: string | null; // past ADR decisions injected before each session
 }
 
 // ─── Domain ──────────────────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ export interface ForumRequest {
   agentIds?: string[];      // optional subset of agents to run
   modelOverride?: string;   // override agent model (e.g. from UI model selector)
   orgContext?: import("@/lib/types/salesforce").OrgContext;
+  orgContextStr?: string;   // formatted live org context string, set server-side from MCP
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────

@@ -40,6 +40,8 @@ export class AgentRunner {
     const patternBlock = formatPatternBlock(patterns);
     if (patternBlock) systemPrompt = `${systemPrompt}\n\n${patternBlock}`;
 
+    if (agent.memoryBlock) systemPrompt = `${systemPrompt}\n\n${agent.memoryBlock}`;
+
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
       input, clientContext, systemPrompt, metadata: {}, orgContext,
