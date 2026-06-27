@@ -2033,10 +2033,10 @@ export default function ForumTestUI() {
                 cursor: uploading ? "default" : "pointer",
               }}
             >
-              <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden"
+              <input ref={fileInputRef} type="file" accept={ACCEPTED}
+                style={{ display: "none" }}
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                onClick={e => e.stopPropagation()}
-                disabled={uploading} />
+                onClick={e => e.stopPropagation()} />
 
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button
