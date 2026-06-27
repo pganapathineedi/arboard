@@ -1621,8 +1621,7 @@ export default function ForumTestUI() {
     if (!sessionComplete) return;
     const judge = agents.find(a => a.agentId === "sf-judge" && a.complete);
     if (judge?.content) setPreviousFeedback(judge.content);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionComplete]);
+  }, [sessionComplete, judgeAgent?.content]);
 
   // Scroll forum panel to bottom as tokens arrive
   useEffect(() => {
