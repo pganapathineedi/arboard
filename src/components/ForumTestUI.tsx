@@ -164,7 +164,7 @@ function formatCost(usd: number): string {
 
 function estimateSession(inputText: string, agentCount: number, modelId: ModelId) {
   const reqTokens   = Math.ceil(inputText.length / 4);
-  const sysTokens   = 450;
+  const sysTokens   = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
   const inputPerAgent  = reqTokens + sysTokens;
   const outputPerAgent = 600;
   const totalInput  = inputPerAgent * agentCount;
@@ -1511,7 +1511,7 @@ function SessionSummaryDrawer({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function ForumTestUI() {
-  const [model, setModel]               = useState<ModelId>("claude-haiku-4-5-20251001");
+  const [model, setModel]               = useState<ModelId>("claude-sonnet-4-6");
   const [input, setInput]               = useState(DEFAULT_INPUT);
   const [agents, setAgents]             = useState<AgentOutput[]>([]);
   const [running, setRunning]           = useState(false);
