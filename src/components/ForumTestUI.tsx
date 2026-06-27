@@ -2033,6 +2033,7 @@ export default function ForumTestUI() {
             >
               <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+                onClick={e => e.stopPropagation()}
                 disabled={uploading} />
 
               {uploadResult ? (
