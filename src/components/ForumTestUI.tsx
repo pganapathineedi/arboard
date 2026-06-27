@@ -1837,6 +1837,7 @@ export default function ForumTestUI() {
     setSessionComplete(false); setShowSummaryDrawer(false);
     setSessionEndTime(null); setSessionStartTime(null);
     setActiveAgentIds(new Set(selectedAgentIds));
+    if (revisionOpts) setRevisionRound(revisionOpts.revisionRound);
     setRunning(true);
     setSelectionMode(false);
     abortRef.current = new AbortController();
