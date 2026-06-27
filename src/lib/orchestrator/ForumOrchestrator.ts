@@ -59,6 +59,18 @@ function buildClosingInput(
   ].join("\n");
 }
 
+// Revision round: prepend judge feedback so specialists address prior concerns
+function buildRevisionInput(requirement: string, round: number, previousFeedback: string): string {
+  return [
+    `REVISION CONTEXT — Round ${round}: The previous Judge verdict was:`,
+    previousFeedback,
+    "Address the concerns raised before providing your updated assessment.",
+    "",
+    "## REQUIREMENT",
+    requirement,
+  ].join("\n");
+}
+
 // Scribe and Learner only need requirement + judge verdict — no full specialist debate
 function buildTrimmedClosingInput(requirement: string, judgeOutput: string): string {
   return [
@@ -166,14 +178,16 @@ export class ForumOrchestrator {
       }
     }
 
+    const isRevision = !!(request.revisionRound && request.previousFeedback);
+
     const allAgents = ForumOrchestrator.getAgents(domain, selectedAgentIds);
 
     // ── Phase split ───────────────────────────────────────────────────────────
-    const designer    = allAgents.find(a => a.id === DESIGNER_ID);
+    const designer    = isRevision ? undefined : allAgents.find(a => a.id === DESIGNER_ID);
     const specialists = allAgents.filter(a => a.id !== DESIGNER_ID && !CLOSING_IDS.has(a.id));
     const closing     = allAgents.filter(a => CLOSING_IDS.has(a.id));
 
-    const usePhasedFlow = !!designer;
+    const usePhasedFlow = !!designer || isRevision;
 
     yield `data: ${JSON.stringify({ type: "session_start", sessionId, agentCount: allAgents.length })}\n\n`;
 
@@ -183,39 +197,46 @@ export class ForumOrchestrator {
         yield* ForumOrchestrator.runAgent(agent, request, clientContext, sessionId, domainId, orgContext, memoryBlocks[agent.id]);
       }
     } else {
-      // ── Phase 1: Designer ─────────────────────────────────────────────────
-      const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id]);
-
-      yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
-
+      // ── Phase 1: Designer (skipped in revision rounds) ────────────────────
       let designerOutput = "";
-      let designerUsage: UsageData | undefined;
-      const designerStart = Date.now();
 
-      try {
-        for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext)) {
-          if (typeof chunk === "string") {
-            designerOutput += chunk;
-            yield `data: ${JSON.stringify({ type: "token", agentId: designer.id, token: chunk })}\n\n`;
-          } else {
-            designerUsage = chunk.__usage;
+      if (designer) {
+        const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id]);
+
+        yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
+
+        let designerUsage: UsageData | undefined;
+        const designerStart = Date.now();
+
+        try {
+          for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext)) {
+            if (typeof chunk === "string") {
+              designerOutput += chunk;
+              yield `data: ${JSON.stringify({ type: "token", agentId: designer.id, token: chunk })}\n\n`;
+            } else {
+              designerUsage = chunk.__usage;
+            }
           }
+          if (designerUsage) {
+            totalInputTokens += designerUsage.inputTokens;
+            totalOutputTokens += designerUsage.outputTokens;
+            totalCacheReadTokens += designerUsage.cacheReadTokens ?? 0;
+            totalCacheWriteTokens += designerUsage.cacheWriteTokens ?? 0;
+          }
+          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens, outputTokens: designerUsage?.outputTokens, cacheReadTokens: designerUsage?.cacheReadTokens, cacheWriteTokens: designerUsage?.cacheWriteTokens })}\n\n`;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          yield `data: ${JSON.stringify({ type: "agent_error", agentId: designer.id, error: message, durationMs: Date.now() - designerStart })}\n\n`;
+          designerOutput = request.input;
         }
-        if (designerUsage) {
-          totalInputTokens += designerUsage.inputTokens;
-          totalOutputTokens += designerUsage.outputTokens;
-          totalCacheReadTokens += designerUsage.cacheReadTokens ?? 0;
-          totalCacheWriteTokens += designerUsage.cacheWriteTokens ?? 0;
-        }
-        yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens, outputTokens: designerUsage?.outputTokens, cacheReadTokens: designerUsage?.cacheReadTokens, cacheWriteTokens: designerUsage?.cacheWriteTokens })}\n\n`;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        yield `data: ${JSON.stringify({ type: "agent_error", agentId: designer.id, error: message, durationMs: Date.now() - designerStart })}\n\n`;
-        designerOutput = request.input;
+      } else if (isRevision) {
+        designerOutput = `(Revision Round ${request.revisionRound} — Designer phase skipped. Revision context was provided to all specialists.)`;
       }
 
       // ── Phase 2: Specialist reviews ───────────────────────────────────────
-      const reviewInput = buildReviewInput(request.input, designerOutput);
+      const reviewInput = isRevision
+        ? buildRevisionInput(request.input, request.revisionRound!, request.previousFeedback!)
+        : buildReviewInput(request.input, designerOutput);
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
       for (const agent of specialists) {

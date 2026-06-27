@@ -1108,6 +1108,7 @@ const ARCHITECT_ROLES = [
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
   sessionId, jiraIssueKey, signOff, onCountersign, matchedPatterns,
+  revisionRound, onRevisionRound,
 }: {
   verdict: "approved" | "conditional" | "revision";
   judgeContent: string;
@@ -1118,6 +1119,8 @@ function VerdictBox({
   signOff: { name: string; role: string; timestamp: string } | null;
   onCountersign: (name: string, role: string) => Promise<void>;
   matchedPatterns: { id: string; title: string; severity: string }[];
+  revisionRound: number;
+  onRevisionRound: () => void;
 }) {
   const [signerName, setSignerName] = useState("");
   const [showPatterns, setShowPatterns] = useState(false);
@@ -1278,12 +1281,18 @@ function VerdictBox({
           ⬇ Download Report
         </button>
         {verdict !== "approved" && (
-          <button style={{
-            padding: "8px 18px", background: "transparent",
-            border: `1px solid ${colors.border}66`, color: colors.text,
-            fontSize: 12, borderRadius: 6, cursor: "pointer",
-          }}>
-            ↻ Revision Round
+          <button
+            onClick={onRevisionRound}
+            disabled={revisionRound >= 3}
+            style={{
+              padding: "8px 18px", background: "transparent",
+              border: `1px solid ${colors.border}66`, color: colors.text,
+              fontSize: 12, borderRadius: 6,
+              cursor: revisionRound >= 3 ? "not-allowed" : "pointer",
+              opacity: revisionRound >= 3 ? 0.4 : 1,
+            }}
+          >
+            ↻ {revisionRound === 0 ? "Revision Round" : `Revision Round ${revisionRound + 1}`}
           </button>
         )}
       </div>
@@ -1516,6 +1525,9 @@ export default function ForumTestUI() {
   const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
   const [patternDetails, setPatternDetails] = useState<{ id: string; title: string; severity: string }[]>([]);
 
+  const [revisionRound, setRevisionRound]       = useState(0);
+  const [previousFeedback, setPreviousFeedback] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
   const forumRef     = useRef<HTMLDivElement | null>(null);
@@ -1580,6 +1592,14 @@ export default function ForumTestUI() {
         setPatternDetails(data);
       })
       .catch(() => {/* non-fatal */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionComplete]);
+
+  // Capture Judge verdict for revision rounds
+  useEffect(() => {
+    if (!sessionComplete) return;
+    const judge = agents.find(a => a.agentId === "sf-judge" && a.complete);
+    if (judge?.content) setPreviousFeedback(judge.content);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionComplete]);
 
@@ -1778,7 +1798,7 @@ export default function ForumTestUI() {
     });
   };
 
-  const run = async () => {
+  const run = async (revisionOpts?: { revisionRound: number; previousFeedback: string }) => {
     if (!input.trim() || running) return;
     setAgents([]); setSessionId(null);
     setSessionComplete(false); setShowSummaryDrawer(false);
@@ -1799,7 +1819,9 @@ export default function ForumTestUI() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
-          agentIds: selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined,
+          // Revision runs skip agent pre-selection — orchestrator handles agent set
+          agentIds: revisionOpts ? undefined : (selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined),
+          ...(revisionOpts ?? {}),
         }),
         signal: abortRef.current.signal,
       });
@@ -1839,6 +1861,8 @@ export default function ForumTestUI() {
     setJiraIssueUrl(null);
     setSignOff(null);
     setPatternDetails([]);
+    setRevisionRound(0);
+    setPreviousFeedback("");
   };
 
   const handleCountersign = useCallback(async (name: string, role: string) => {
@@ -2146,6 +2170,20 @@ export default function ForumTestUI() {
         {/* ══ SESSION VIEW ══════════════════════════════════════════════════════ */}
         {showSessionView && (
           <>
+            {/* Revision round indicator */}
+            {revisionRound > 0 && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 14px", marginBottom: 12,
+                background: "rgba(159,112,245,0.08)",
+                border: "1px solid rgba(159,112,245,0.3)",
+                borderRadius: 8, fontSize: 12, color: "#9f70f5",
+              }}>
+                <span>↻</span>
+                <span>Revision Round {revisionRound} — Designer phase skipped, addressing prior Judge feedback</span>
+              </div>
+            )}
+
             {/* Impact analysis result → agent roster */}
             {analysis && (
               <>
@@ -2193,6 +2231,12 @@ export default function ForumTestUI() {
                       signOff={signOff}
                       onCountersign={handleCountersign}
                       matchedPatterns={patternDetails}
+                      revisionRound={revisionRound}
+                      onRevisionRound={() => {
+                        const nextRound = revisionRound + 1;
+                        setRevisionRound(nextRound);
+                        run({ revisionRound: nextRound, previousFeedback });
+                      }}
                     />
                   )}
 

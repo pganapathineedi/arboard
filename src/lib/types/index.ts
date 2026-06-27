@@ -126,6 +126,8 @@ export interface ForumRequest {
   modelOverride?: string;   // override agent model (e.g. from UI model selector)
   orgContext?: import("@/lib/types/salesforce").OrgContext;
   orgContextStr?: string;   // formatted live org context string, set server-side from MCP
+  revisionRound?: number;   // 1, 2, 3 — which iteration this is
+  previousFeedback?: string; // Judge's verdict text from the prior round
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────
