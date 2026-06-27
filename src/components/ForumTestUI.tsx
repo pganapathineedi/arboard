@@ -1708,6 +1708,7 @@ export default function ForumTestUI() {
       if (!res.ok || !json.extractedText) { setUploadError(json.error ?? "Upload failed"); return; }
       setUploadResult(json);
       setInput(json.extractedText);
+      analyzeImpact(json.extractedText);
     } catch { setUploadError("Upload failed — network error"); }
     finally {
       setUploading(false);
@@ -1788,8 +1789,9 @@ export default function ForumTestUI() {
     }
   }, []);
 
-  const analyzeImpact = async () => {
-    if (!input.trim() || analysing) return;
+  const analyzeImpact = async (textOverride?: string) => {
+    const textToAnalyse = textOverride ?? input;
+    if (!textToAnalyse.trim() || analysing) return;
     setAnalysis(null);
     setAnalysing(true);
     setSelectionMode(false);
@@ -1799,7 +1801,7 @@ export default function ForumTestUI() {
       const res = await fetch("/api/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input: textToAnalyse }),
       });
       if (!res.ok) throw new Error("Analysis failed");
       const data = await res.json() as ImpactAnalysis;
@@ -2159,7 +2161,7 @@ export default function ForumTestUI() {
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button
-                onClick={analyzeImpact}
+                onClick={() => analyzeImpact()}
                 disabled={!input.trim()}
                 style={{
                   padding: "10px 28px", background: "#00c8f0", color: "#07090f",
