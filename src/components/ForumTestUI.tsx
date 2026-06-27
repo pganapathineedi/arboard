@@ -2112,7 +2112,7 @@ export default function ForumTestUI() {
             {/* <ClientContextBanner /> */}
 
             {/* Salesforce Org Connection Banner */}
-            {/* <SalesforceOrgBanner
+            <SalesforceOrgBanner
               status={orgStatus}
               orgInfo={orgInfo}
               orgContext={orgContext}
@@ -2121,12 +2121,12 @@ export default function ForumTestUI() {
               onDisconnect={handleOrgDisconnect}
               onRefresh={handleOrgRefresh}
               refreshing={refreshingOrg}
-            /> */}
+            />
 
             {/* Org Health Snapshot */}
-            {/* {orgStatus === "connected" && orgContext && (
+            {orgStatus === "connected" && orgContext && (
               <OrgHealthPanel orgContext={orgContext} />
-            )} */}
+            )}
 
             {/* Textarea — hidden when a document is loaded */}
             {!uploadResult && (
