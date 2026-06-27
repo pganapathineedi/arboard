@@ -130,7 +130,7 @@ const FORMAT_LABELS: Record<string, string> = {
 const DEFAULT_INPUT =
   "Build a Customer 360 self-service portal on Experience Cloud for B2C customers to view real-time SAP order status, submit service cases, and receive Einstein Bot-assisted case deflection. The portal integrates with SAP S/4HANA via MuleSoft Anypoint Platform. Order data (current and 24-month history) must be scoped to the authenticated customer's account only. Einstein Bots should handle initial case triage and deflect common queries before routing to human agents. The solution must support 50,000 active portal users and up to 10 million order records within 24 months of launch.";
 
-const ACCEPTED = ".pdf,.docx,.txt,.md,.html,.htm";
+const ACCEPTED = ".pdf,.doc,.docx";
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -2022,11 +2022,13 @@ export default function ForumTestUI() {
               onDragOver={e => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
+              onClick={() => { if (!uploadResult && !uploading) fileInputRef.current?.click(); }}
               style={{
                 border: `2px dashed ${dragging ? "#00c8f0" : "rgba(255,255,255,0.08)"}`,
                 borderRadius: 8, padding: "12px 16px", marginBottom: 12,
                 background: dragging ? "rgba(0,200,240,0.03)" : "transparent",
                 transition: "border-color 0.2s",
+                cursor: uploadResult || uploading ? "default" : "pointer",
               }}
             >
               <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden"
