@@ -59,6 +59,17 @@ function buildClosingInput(
   ].join("\n");
 }
 
+// Scribe and Learner only need requirement + judge verdict — no full specialist debate
+function buildTrimmedClosingInput(requirement: string, judgeOutput: string): string {
+  return [
+    "## REQUIREMENT",
+    requirement,
+    "",
+    "## ARB JUDGE VERDICT",
+    judgeOutput || "(Judge output not yet available)",
+  ].join("\n");
+}
+
 // ── ADR helpers ───────────────────────────────────────────────────────────────
 
 function parseVerdictForADR(content: string): string {
@@ -243,8 +254,17 @@ export class ForumOrchestrator {
       const closingInput = buildClosingInput(request.input, designerOutput, specialistOutputs);
       const closingOutputs: Record<string, string> = {};
 
-      for (const agent of closing) {
+      // Judge runs first with full context; Scribe/Learner get trimmed input (requirement + verdict only)
+      const sortedClosing = [
+        ...closing.filter(a => a.id === "sf-judge"),
+        ...closing.filter(a => a.id !== "sf-judge"),
+      ];
+
+      for (const agent of sortedClosing) {
         const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id]);
+        const agentInput = agent.id === "sf-judge"
+          ? closingInput
+          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "");
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -253,7 +273,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, closingInput, clientContext, sessionId, domainId, orgContext)) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext)) {
             if (typeof chunk === "string") {
               agentContent += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
