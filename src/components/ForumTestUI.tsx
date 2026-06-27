@@ -1832,7 +1832,7 @@ export default function ForumTestUI() {
   };
 
   const run = async (revisionOpts?: { revisionRound: number; previousFeedback: string }) => {
-    console.log("[run] called", revisionOpts ? { revisionRound: revisionOpts.revisionRound, hasFeedback: !!revisionOpts.previousFeedback, feedbackLen: revisionOpts.previousFeedback.length } : "initial");
+    console.log("[run] called", revisionOpts ? { revisionRound: revisionOpts.revisionRound, hasFeedback: !!revisionOpts.previousFeedback, feedbackLen: revisionOpts.previousFeedback?.length ?? 0 } : "initial");
     if (!input.trim() || running) return;
     setAgents([]); setSessionId(null);
     setSessionComplete(false); setShowSummaryDrawer(false);
