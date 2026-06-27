@@ -2070,7 +2070,7 @@ export default function ForumTestUI() {
                       : "↑ Upload Document"}
                   </button>
                   <span style={{ fontSize: 11, color: "#7B8DB0" }}>
-                    Drag & drop — PDF · DOCX · TXT · MD · HTML (Confluence)
+                    Drag & drop — PDF · DOC · DOCX
                   </span>
                   {uploadError && <span style={{ fontSize: 11, color: "#e84040", marginLeft: "auto" }}>{uploadError}</span>}
                 </div>
