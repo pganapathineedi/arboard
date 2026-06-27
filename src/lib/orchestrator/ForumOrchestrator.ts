@@ -155,9 +155,10 @@ export class ForumOrchestrator {
     }
 
     // ── Impact Analysis ───────────────────────────────────────────────────────
+    const isRevision = !!(request.revisionRound && request.previousFeedback);
     let selectedAgentIds = request.agentIds;
 
-    if (!selectedAgentIds || selectedAgentIds.length === 0) {
+    if (!isRevision && (!selectedAgentIds || selectedAgentIds.length === 0)) {
       yield `data: ${JSON.stringify({ type: "analysis_start" })}\n\n`;
       try {
         const analysis = await ImpactAnalyser.analyse(request.input, domainId, orgContext);
@@ -177,8 +178,6 @@ export class ForumOrchestrator {
         selectedAgentIds = undefined;
       }
     }
-
-    const isRevision = !!(request.revisionRound && request.previousFeedback);
 
     const allAgents = ForumOrchestrator.getAgents(domain, selectedAgentIds);
 

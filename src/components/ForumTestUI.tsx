@@ -1830,7 +1830,7 @@ export default function ForumTestUI() {
     });
   };
 
-  const run = async (revisionOpts?: { revisionRound: number; previousFeedback: string }) => {
+  const run = async (revisionOpts?: { revisionRound: number; previousFeedback: string; agentIds?: string[] }) => {
     console.log("[run] called", revisionOpts ? { revisionRound: revisionOpts.revisionRound, hasFeedback: !!revisionOpts.previousFeedback, feedbackLen: revisionOpts.previousFeedback?.length ?? 0 } : "initial");
     if (!input.trim() || running) return;
     setAgents([]); setSessionId(null);
@@ -1853,8 +1853,8 @@ export default function ForumTestUI() {
         body: JSON.stringify({
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
           // Revision runs skip agent pre-selection — orchestrator handles agent set
-          agentIds: revisionOpts ? undefined : (selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined),
-          ...(revisionOpts ?? {}),
+          agentIds: revisionOpts ? revisionOpts.agentIds : (selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined),
+          ...(revisionOpts ? { revisionRound: revisionOpts.revisionRound, previousFeedback: revisionOpts.previousFeedback } : {}),
         }),
         signal: abortRef.current.signal,
       });
@@ -2278,7 +2278,7 @@ export default function ForumTestUI() {
                       onRevisionRound={() => {
                         const nextRound = revisionRound + 1;
                         setRevisionRound(nextRound);
-                        run({ revisionRound: nextRound, previousFeedback });
+                        run({ revisionRound: nextRound, previousFeedback, agentIds: Array.from(activeAgentIds) });
                       }}
                     />
                   )}
