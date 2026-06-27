@@ -5,6 +5,7 @@ import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { defaultPipeline } from "@/lib/middleware";
 import { isMockMode, mockStream, getMockResponse } from "@/lib/mock/mockMode";
 import { getRelevantPatterns, formatPatternBlock } from "@/lib/patternRetrieval";
+import { WELL_ARCHITECTED_BY_AGENT } from "@/lib/prompt/wellArchitectedPrinciples";
 
 const anthropic = new Anthropic();
 
@@ -41,6 +42,10 @@ export class AgentRunner {
     if (patternBlock) systemPrompt = `${systemPrompt}\n\n${patternBlock}`;
 
     if (agent.memoryBlock) systemPrompt = `${systemPrompt}\n\n${agent.memoryBlock}`;
+
+    const agentKey = agent.id.replace(/^sf-/, "");
+    const waPrinciples = WELL_ARCHITECTED_BY_AGENT[agentKey];
+    if (waPrinciples) systemPrompt = `${systemPrompt}\n\n${waPrinciples}`;
 
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
