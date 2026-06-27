@@ -2223,7 +2223,7 @@ export default function ForumTestUI() {
                 borderRadius: 8, fontSize: 12, color: "#9f70f5",
               }}>
                 <span>↻</span>
-                <span>Revision Round {revisionRound} — Designer phase skipped, addressing prior Judge feedback</span>
+                <span>Revision Round {revisionRound + 1} — Designer phase skipped, addressing prior Judge feedback</span>
               </div>
             )}
 
