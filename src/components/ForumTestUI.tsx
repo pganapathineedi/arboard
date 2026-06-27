@@ -1125,7 +1125,7 @@ const ARCHITECT_ROLES = [
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
   sessionId, jiraIssueKey, signOff, onCountersign, matchedPatterns,
-  revisionRound, onRevisionRound, hideSignOff,
+  revisionRound, onRevisionRound, hideSignOff, onDownload,
 }: {
   verdict: "approved" | "conditional" | "revision";
   judgeContent: string;
@@ -1139,6 +1139,7 @@ function VerdictBox({
   revisionRound: number;
   onRevisionRound: () => void;
   hideSignOff?: boolean;
+  onDownload: () => void;
 }) {
   const [signerName, setSignerName] = useState("");
   const [showPatterns, setShowPatterns] = useState(false);
@@ -1292,10 +1293,13 @@ function VerdictBox({
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <button style={{
-          padding: "8px 18px", background: "#00c8f0", color: "#07090f",
-          fontWeight: 700, fontSize: 12, borderRadius: 6, cursor: "pointer", border: "none",
-        }}>
+        <button
+          onClick={onDownload}
+          style={{
+            padding: "8px 18px", background: "#00c8f0", color: "#07090f",
+            fontWeight: 700, fontSize: 12, borderRadius: 6, cursor: "pointer", border: "none",
+          }}
+        >
           ⬇ Download Report
         </button>
         {verdict !== "approved" && (
@@ -1914,6 +1918,83 @@ export default function ForumTestUI() {
     setSignOff({ name, role, timestamp });
   }, [sessionId, jiraIssueKey]);
 
+  const handleDownloadReport = useCallback(() => {
+    const sessionDate = sessionStartTime
+      ? new Date(sessionStartTime).toLocaleString()
+      : new Date().toLocaleString();
+    const docName = uploadResult?.filename ?? "Inline requirement";
+    const judgeAgent = agents.find(a => a.agentId === "sf-judge" && a.complete);
+    const judgeVerdict = judgeAgent ? (parseVerdict(judgeAgent.content) ?? "unknown") : "unknown";
+    const judgeConfidence = judgeAgent ? (parseJudgeConfidenceLevel(judgeAgent.content) ?? "unknown") : "unknown";
+    const judgePoints = judgeAgent ? parseHumanJudgementPoints(judgeAgent.content) : [];
+
+    const lines: string[] = [
+      "# ARBoard Forum Report",
+      "",
+      `**Session Date:** ${sessionDate}`,
+      `**Session ID:** ${sessionId ?? "—"}`,
+      `**Document:** ${docName}`,
+      "",
+      "---",
+      "",
+      "## Requirement",
+      "",
+      input.trim(),
+      "",
+      "---",
+      "",
+      "## Agent Analyses",
+      "",
+    ];
+
+    for (const agent of agents.filter(a => a.complete && !a.error)) {
+      const meta = AGENT_META[agent.agentId];
+      lines.push(`### ${meta?.icon ?? "🤖"} ${agent.agentName} (${meta?.badge ?? agent.agentId})`);
+      if (agent.durationMs) lines.push(`*Completed in ${formatDuration(agent.durationMs)}*`);
+      lines.push("");
+      lines.push(agent.content.trim());
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    lines.push("## Judge Verdict");
+    lines.push("");
+    lines.push(`**Verdict:** ${judgeVerdict.toUpperCase()}`);
+    lines.push(`**Confidence Level:** ${judgeConfidence}`);
+    if (judgePoints.length > 0) {
+      lines.push("");
+      lines.push("**Points Requiring Human Judgement:**");
+      for (const pt of judgePoints) lines.push(`- ${pt}`);
+    }
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    lines.push("## Endorsement");
+    lines.push("");
+    if (jiraIssueKey) {
+      lines.push(`**Decision:** Endorsed`);
+      lines.push(`**Jira Ticket:** ${jiraIssueKey}`);
+    } else {
+      lines.push("_No endorsement recorded for this session._");
+    }
+    if (signOff) {
+      lines.push("");
+      lines.push(`**Countersigned by:** ${signOff.name}, ${signOff.role}`);
+      lines.push(`**Timestamp:** ${new Date(signOff.timestamp).toLocaleString()}`);
+    }
+    lines.push("");
+
+    const markdown = lines.join("\n");
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ARBoard-Report-${sessionId ?? "session"}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [agents, input, jiraIssueKey, sessionId, sessionStartTime, signOff, uploadResult]);
+
   const hasDetected = uploadResult && (
     uploadResult.detectedContext.clouds.length > 0 ||
     uploadResult.detectedContext.compliance.length > 0 ||
@@ -2276,6 +2357,7 @@ export default function ForumTestUI() {
                       matchedPatterns={patternDetails}
                       revisionRound={revisionRound}
                       hideSignOff={!!pendingEndorsement}
+                      onDownload={handleDownloadReport}
                       onRevisionRound={() => {
                         const nextRound = revisionRound + 1;
                         setRevisionRound(nextRound);
