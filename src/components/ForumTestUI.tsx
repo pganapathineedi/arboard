@@ -171,7 +171,7 @@ function parseConfidence(content: string): number | null {
 
 function parseVerdict(content: string): "approved" | "conditional" | "revision" | null {
   const u = content.toUpperCase();
-  if (u.includes("APPROVED WITH CONDITIONS") || u.includes("CONDITIONALLY APPROVED")) return "conditional";
+  if (u.includes("APPROVED WITH CONDITIONS") || u.includes("APPROVE WITH CONDITIONS") || u.includes("CONDITIONALLY APPROVED")) return "conditional";
   if (u.includes("REVISION REQUIRED") || u.includes("REQUIRES REVISION"))            return "revision";
   if (u.includes("APPROVED"))                                                          return "approved";
   return null;
@@ -1799,6 +1799,7 @@ export default function ForumTestUI() {
   };
 
   const run = async (revisionOpts?: { revisionRound: number; previousFeedback: string }) => {
+    console.log("[run] called", revisionOpts ? { revisionRound: revisionOpts.revisionRound, hasFeedback: !!revisionOpts.previousFeedback, feedbackLen: revisionOpts.previousFeedback.length } : "initial");
     if (!input.trim() || running) return;
     setAgents([]); setSessionId(null);
     setSessionComplete(false); setShowSummaryDrawer(false);
