@@ -2,10 +2,15 @@ import type { MemoryContext } from './jiraMemoryRetriever';
 
 function buildMemoryBlock(adrs: MemoryContext['relevantADRs']): string {
   const lines = [
-    'PRIOR REVIEW CONTEXT (for awareness only — do not anchor on these findings):',
+    'PRIOR REVIEW CONTEXT — reconciliation required:',
     'The following issues were flagged in a previous ARB review of this design.',
-    'Assess the current design independently first, then reference this context',
-    'to note whether prior issues have been resolved, persist, or have changed in severity.',
+    '',
+    'Instructions:',
+    '1. Complete your independent assessment of the current design first.',
+    '2. Then for each prior ADR below, append a reconciliation line in this format:',
+    '   [JIRA-KEY] → RESOLVED | PERSISTS | ESCALATED | NOT APPLICABLE — <one sentence reason>',
+    '3. If your current verdict contradicts a prior APPROVED decision, explicitly flag it:',
+    '   CONTRADICTION: [JIRA-KEY] — <what changed and why your verdict differs>',
     '',
   ];
 
