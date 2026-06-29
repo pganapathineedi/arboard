@@ -561,11 +561,11 @@ function AgentSelectorPanel({
                 transition: "opacity 0.2s, border-color 0.2s",
               }}
             >
+              <div style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: meta?.color ?? "#F0F4FF", marginBottom: 8, letterSpacing: "0.02em" }}>
+                {a.agentName}
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>{meta?.icon ?? "🤖"}</span>
-                <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: meta?.color ?? "#F0F4FF" }}>
-                  {a.agentName}
-                </span>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: isDesignerSkipped ? PRIORITY_STYLE.optional.bg : pStyle.bg, color: isDesignerSkipped ? "#7B8DB0" : pStyle.text }}>
                     {isDesignerSkipped ? "SKIPPED" : a.priority.toUpperCase()}
