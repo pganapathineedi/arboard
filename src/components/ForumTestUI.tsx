@@ -1802,10 +1802,11 @@ export default function ForumTestUI() {
     setSelectedAgentIds(new Set());
 
     try {
+      console.log("analyzeImpact sending:", textToAnalyse.substring(0, 200));
       const res = await fetch("/api/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: textToAnalyse }),
+        body: JSON.stringify({ input: textToAnalyse, mode: apiMode }),
       });
       if (!res.ok) throw new Error("Analysis failed");
       const data = await res.json() as ImpactAnalysis;

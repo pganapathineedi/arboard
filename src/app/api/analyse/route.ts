@@ -5,13 +5,19 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest): Promise<Response> {
   console.log('[analyse] POST called');
-  let body: { input?: string; documentText?: string; domainId?: string };
+  let body: { input?: string; documentText?: string; domainId?: string; mode?: string };
 
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const mode = body.mode === "real" ? "real" : "mock";
+  process.env.ANTHROPIC_API_KEY =
+    mode === "real"
+      ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
+      : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock");
 
   const input = body.documentText ?? body.input ?? "";
   if (!input.trim()) {
@@ -22,6 +28,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const analysis = await ImpactAnalyser.analyse(input, body.domainId);
     return NextResponse.json(analysis);
   } catch (err) {
+    console.error("analyse error:", err);
     const message = err instanceof Error ? err.message : "Analysis failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
