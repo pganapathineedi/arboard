@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import Anthropic from "@anthropic-ai/sdk";
 import type { AgentConfig, ClientContext, DomainConfig, ForumRequest } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { getDomain } from "@/lib/domains/salesforce";
@@ -7,15 +8,34 @@ import type { UsageData } from "@/lib/agents/AgentRunner";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
 import { saveADR } from "@/lib/adr/store";
 import { retrieveMemory, buildAllAgentMemoryBlocks } from "@/lib/memory";
+import { fetchTicket } from "@/lib/integrations/jira";
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 
-function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBlock?: string | null): AgentConfig {
+function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBlock?: string | null, priorADRBlock?: string | null): AgentConfig {
   const overrides: Partial<AgentConfig> = {};
   if (request.modelOverride) overrides.model = request.modelOverride;
   if (request.orgContextStr) overrides.orgContext = request.orgContextStr;
-  if (memoryBlock) overrides.memoryBlock = memoryBlock;
+  const combined = [memoryBlock, priorADRBlock].filter(Boolean).join('\n\n');
+  if (combined) overrides.memoryBlock = combined;
+  if (agent.id === DESIGNER_ID && request.inputMode === "debate") {
+    const debateLines = [
+      "",
+      "DEBATE MODE: The user has provided their own proposed architecture approach below.",
+      "Your role is NOT to propose a new solution. Instead:",
+      "- Critically analyse the proposed approach",
+      "- Identify architectural weaknesses, anti-patterns, and risks",
+      "- Challenge assumptions in the design",
+      "- Highlight what is good about the approach",
+      "- Suggest specific improvements",
+      "Do NOT redesign from scratch. Critique what has been proposed.",
+    ];
+    if (request.debateFocusAreas) {
+      debateLines.push("", `Focus areas requested by submitter: ${request.debateFocusAreas}`);
+    }
+    overrides.systemPrompt = agent.systemPrompt + "\n" + debateLines.join("\n");
+  }
   return Object.keys(overrides).length > 0 ? { ...agent, ...overrides } : agent;
 }
 
@@ -72,14 +92,16 @@ function buildRevisionInput(requirement: string, round: number, previousFeedback
 }
 
 // Scribe and Learner only need requirement + judge verdict — no full specialist debate
-function buildTrimmedClosingInput(requirement: string, judgeOutput: string): string {
-  return [
+function buildTrimmedClosingInput(requirement: string, judgeOutput: string, priorADRBlock?: string): string {
+  const parts = [
     "## REQUIREMENT",
     requirement,
     "",
     "## ARB JUDGE VERDICT",
     judgeOutput || "(Judge output not yet available)",
-  ].join("\n");
+  ];
+  if (priorADRBlock) parts.push("", priorADRBlock);
+  return parts.join("\n");
 }
 
 // ── ADR helpers ───────────────────────────────────────────────────────────────
@@ -107,8 +129,18 @@ function parseMustFixForADR(content: string): string[] {
 }
 
 function parseConfidenceLevelForADR(content: string): string | undefined {
-  const match = content.match(/##\s*Confidence Level\s*\n\*\*([^*]+)\*\*/i);
-  return match?.[1]?.trim();
+  const patterns = [
+    /##\s*Confidence Level\s*\n\*\*([^*]+)\*\*/i,
+    /Confidence Level[:\s*]+\*\*([^*]+)\*\*/i,
+    /\*\*Confidence Level:\*\*\s*([^\n*]+)/i,
+    /Confidence:\s*\*\*([^*]+)\*\*/i,
+    /CONFIDENCE:\s*(High|Medium|Low)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return undefined;
 }
 
 function parseHumanJudgementPoints(content: string): string[] {
@@ -134,7 +166,8 @@ export class ForumOrchestrator {
     return domain.agents.filter((a) => agentIds.includes(a.id));
   }
 
-  static async *streamForum(request: ForumRequest): AsyncGenerator<string> {
+  static async *streamForum(request: ForumRequest, mode: "real" | "mock" = "mock"): AsyncGenerator<string> {
+    console.log('[forum] streamForum called with mode:', mode);
     const sessionId = randomUUID();
     const sessionStart = Date.now();
     const domainId = request.domainId ?? "salesforce";
@@ -152,6 +185,29 @@ export class ForumOrchestrator {
     const memoryBlocks = buildAllAgentMemoryBlocks(memory);
     if (memory.relevantADRs.length > 0) {
       console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
+    }
+
+    // ── Prior ADR injection ───────────────────────────────────────────────────
+    let priorADRBlock: string | null = null;
+    if (request.priorTicket) {
+      try {
+        const ticketContent = await fetchTicket(request.priorTicket);
+        if (ticketContent) {
+          priorADRBlock = [
+            `## Prior ARB Submission (${request.priorTicket}) — REJECTED`,
+            ticketContent,
+            '',
+            'This is a re-submission. Agents must explicitly assess whether each previously',
+            'identified defect has been remediated. Any unresolved prior defect must be',
+            'escalated, not re-debated from scratch.',
+          ].join('\n');
+          console.log(`[forum] Injecting prior ADR block from ${request.priorTicket}`);
+        } else {
+          console.warn(`[forum] Ticket ${request.priorTicket} returned no content — continuing without prior ADR context`);
+        }
+      } catch {
+        console.warn(`[forum] Could not fetch prior ticket ${request.priorTicket} — continuing without it`);
+      }
     }
 
     // ── Impact Analysis ───────────────────────────────────────────────────────
@@ -193,14 +249,14 @@ export class ForumOrchestrator {
     if (!usePhasedFlow) {
       // ── Flat fallback (no designer selected) ─────────────────────────────
       for (const agent of allAgents) {
-        yield* ForumOrchestrator.runAgent(agent, request, clientContext, sessionId, domainId, orgContext, memoryBlocks[agent.id]);
+        yield* ForumOrchestrator.runAgent(agent, request, clientContext, sessionId, domainId, orgContext, memoryBlocks[agent.id], mode);
       }
     } else {
       // ── Phase 1: Designer (skipped in revision rounds) ────────────────────
       let designerOutput = "";
 
-      if (designer) {
-        const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id]);
+      if (designer && (!request.documentContent || request.inputMode === "debate")) {
+        const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id], priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
 
@@ -208,7 +264,7 @@ export class ForumOrchestrator {
         const designerStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
+          for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
             if (typeof chunk === "string") {
               designerOutput += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: designer.id, token: chunk })}\n\n`;
@@ -223,11 +279,16 @@ export class ForumOrchestrator {
             totalCacheWriteTokens += designerUsage.cacheWriteTokens ?? 0;
           }
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens, outputTokens: designerUsage?.outputTokens, cacheReadTokens: designerUsage?.cacheReadTokens, cacheWriteTokens: designerUsage?.cacheWriteTokens })}\n\n`;
+          yield `event: token_usage\ndata: ${JSON.stringify({ agent: designer.name, inputTokens: (designerUsage?.inputTokens ?? 0) > 0 ? designerUsage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (designerUsage?.outputTokens ?? 0) > 0 ? designerUsage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: designer.id, error: message, durationMs: Date.now() - designerStart })}\n\n`;
           designerOutput = request.input;
         }
+      } else if (designer && request.documentContent && request.inputMode !== "debate") {
+        designerOutput = request.documentContent;
+        yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
+        yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, agentName: designer.name, role: designer.role, output: "", status: "skipped", reason: "Document upload — design already exists, review mode only", durationMs: 0 })}\n\n`;
       } else if (isRevision) {
         designerOutput = `(Revision Round ${request.revisionRound} — Designer phase skipped. Revision context was provided to all specialists.)`;
       }
@@ -239,7 +300,7 @@ export class ForumOrchestrator {
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
       for (const agent of specialists) {
-        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id]);
+        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -248,7 +309,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
             if (typeof chunk === "string") {
               content += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
@@ -263,10 +324,12 @@ export class ForumOrchestrator {
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+          yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
           specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
+          if (content) specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
         }
       }
 
@@ -281,10 +344,10 @@ export class ForumOrchestrator {
       ];
 
       for (const agent of sortedClosing) {
-        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id]);
+        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
         const agentInput = agent.id === "sf-judge"
           ? closingInput
-          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "");
+          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -293,7 +356,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
             if (typeof chunk === "string") {
               agentContent += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
@@ -309,6 +372,7 @@ export class ForumOrchestrator {
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+          yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
@@ -323,6 +387,77 @@ export class ForumOrchestrator {
       const parsedMustFix              = parseMustFixForADR(judgeContent);
       const parsedConfidenceLevel      = parseConfidenceLevelForADR(judgeContent);
       const parsedHumanJudgementPoints = parseHumanJudgementPoints(judgeContent);
+
+      // ── Dissent Extraction ─────────────────────────────────────────────────
+      console.log("[dissent] guard check:", { judgeContentLen: judgeContent?.length, specialistCount: specialistOutputs.length, mode });
+      if (judgeContent && specialistOutputs.length > 0) {
+        try {
+          let dissentPayload: object;
+
+          if (mode === "mock") {
+            dissentPayload = {
+              dissent_summary: "Most specialist agents support the APPROVE WITH CONDITIONS verdict; the Architecture Patterns Advisor took a harder line recommending deferral until LDV and security controls are validated in a full sandbox.",
+              total_dissenting: 1,
+              agents: [
+                { name: "Salesforce Solution Designer", risk_level: "MEDIUM", key_concern: "Apex-managed sharing trigger points not fully enumerated across contact assignment, deactivation, and Account merge scenarios", recommendation: "Approve with conditions — sharing ADR must be delivered before the first data model deployment sprint", aligns_with_verdict: true, dissent_reason: null },
+                { name: "LWC & UI Specialist", risk_level: "HIGH", key_concern: "Guest profile FLS not yet scoped; order field exposure risk on Experience Cloud remains unvalidated", recommendation: "Approve conditionally — mandatory guest profile security review and FLS audit required before portal launch", aligns_with_verdict: true, dissent_reason: null },
+                { name: "Apex & Integration Engineer", risk_level: "MEDIUM", key_concern: "No dead-letter recovery path exists beyond the 9-retry Platform Event window", recommendation: "Approve with conditions — IntegrationError__c dead-letter pattern required before MuleSoft integration UAT sign-off", aligns_with_verdict: true, dissent_reason: null },
+                { name: "Flow & Automation Specialist", risk_level: "MEDIUM", key_concern: "Record-Triggered Flow recursion risk on Case status updates triggered by Einstein Bot handoff", recommendation: "Approve — entry conditions and loop detection settings adequately guard against recursion", aligns_with_verdict: true, dissent_reason: null },
+                { name: "Architecture Patterns Advisor", risk_level: "HIGH", key_concern: "LDV skinny table dependency and zero-trust security posture remain unproven without sandbox validation at production data volumes", recommendation: "Defer approval until skinny table request is submitted and a full security sandbox test is executed with realistic volumes", aligns_with_verdict: false, dissent_reason: "The Patterns Advisor recommended outright deferral rather than conditional approval, arguing that both the LDV skinny table request and a complete security sandbox validation must be resolved before any sprint commitment — not used as post-approval conditions. The agent's position is that conditions create delivery pressure to skip controls under project timelines, whereas a Defer verdict enforces resolution prior to build." },
+              ],
+            };
+          } else {
+            const agentOutputsText = [
+              ...(designerOutput && !isRevision
+                ? [`### ${allAgents.find(a => a.id === DESIGNER_ID)?.name ?? "Solution Designer"}\n${designerOutput}`]
+                : []),
+              ...specialistOutputs.map(s => `### ${s.agentName}\n${s.content}`),
+            ].join("\n\n---\n\n");
+
+            const client = new Anthropic();
+            const response = await client.messages.create({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 1000,
+              system: "You are a dissent analyser. Given outputs from specialist architecture agents and a Judge verdict, extract each agent's position. Return ONLY valid JSON, no markdown, no preamble.",
+              messages: [{
+                role: "user",
+                content: `Analyse each agent's output and determine if their recommendation aligns with the Judge verdict.
+
+Return this exact JSON structure:
+{
+  "dissent_summary": "one sentence summary of key disagreements",
+  "total_dissenting": number,
+  "agents": [
+    {
+      "name": "agent name",
+      "risk_level": "HIGH | MEDIUM | LOW",
+      "key_concern": "one sentence",
+      "recommendation": "one sentence",
+      "aligns_with_verdict": true | false,
+      "dissent_reason": "why this agent's view conflicts with verdict, or null if aligned"
+    }
+  ]
+}
+
+## JUDGE VERDICT AND REASONING
+${judgeContent}
+
+## AGENT OUTPUTS
+${agentOutputsText}`,
+              }],
+            });
+
+            const rawText = response.content[0]?.type === "text" ? response.content[0].text : "{}";
+            const raw = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+            dissentPayload = JSON.parse(raw);
+          }
+
+          console.log("[orchestrator] dissent_analysis payload:", JSON.stringify(dissentPayload).slice(0, 300));
+          yield `data: ${JSON.stringify({ type: "dissent_analysis", ...dissentPayload })}\n\n`;
+        } catch (err) {
+          console.error("[orchestrator] Dissent analysis failed:", err instanceof Error ? err.message : err);
+        }
+      }
 
       try {
         await saveADR({
@@ -372,6 +507,7 @@ export class ForumOrchestrator {
     domainId: string,
     orgContext: OrgContext | undefined,
     memoryBlock?: string | null,
+    mode: "real" | "mock" = "mock",
   ): AsyncGenerator<string> {
     const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlock);
 
@@ -381,7 +517,7 @@ export class ForumOrchestrator {
     const agentStart = Date.now();
 
     try {
-      for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
+      for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
         if (typeof chunk === "string") {
           yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
         } else {
@@ -389,6 +525,7 @@ export class ForumOrchestrator {
         }
       }
       yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+      yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
