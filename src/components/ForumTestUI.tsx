@@ -474,7 +474,7 @@ function AgentSelectorPanel({
   orgConnected: boolean;
   onRefreshOrg: () => void;
 }) {
-  const analysisAgentSet = new Set(analysis.activatedAgents.map(a => a.agentId));
+  const analysisAgentSet = new Set((analysis.activatedAgents ?? []).map(a => a.agentId));
   const addableAgents = ALL_AGENT_IDS.filter(id => !analysisAgentSet.has(id));
   const riskColor = RISK_SEVERITY_COLOR[analysis.overallRisk] ?? "#7B8DB0";
   const est = estimateSession(input, Math.max(1, selectedAgentIds.size), model);
@@ -489,7 +489,7 @@ function AgentSelectorPanel({
             fontFamily: "monospace", fontSize: 10, padding: "2px 8px", borderRadius: 4,
             border: `1px solid ${riskColor}44`, background: `${riskColor}15`, color: riskColor,
           }}>
-            {analysis.overallRisk.toUpperCase()} RISK
+            {(analysis.overallRisk ?? "MEDIUM").toUpperCase()} RISK
           </span>
           <span style={{ ...S.label }}>complexity: {analysis.estimatedComplexity}</span>
           <button
@@ -518,7 +518,7 @@ function AgentSelectorPanel({
 
       {/* Activated agent cards with toggles */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 14 }}>
-        {analysis.activatedAgents.map(a => {
+        {(analysis.activatedAgents ?? []).map(a => {
           const meta = AGENT_META[a.agentId];
           const isAlwaysOn = ALWAYS_ON_IDS.has(a.agentId);
           const isSelected = selectedAgentIds.has(a.agentId);
@@ -554,7 +554,7 @@ function AgentSelectorPanel({
               <p style={{ fontSize: 11, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 8px" }}>
                 {a.reason}
               </p>
-              {a.sfRisks.slice(0, 2).map((r, i) => (
+              {(a.sfRisks ?? []).slice(0, 2).map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 10, color: "#7B8DB0", marginBottom: 3 }}>
                   <span style={{ width: 4, height: 4, borderRadius: "50%", marginTop: 3, flexShrink: 0, background: i === 0 ? "#e84040" : "#f0a020" }} />
                   {r}
@@ -597,11 +597,11 @@ function AgentSelectorPanel({
       )}
 
       {/* Cross-cutting considerations */}
-      {analysis.sfConsiderations.length > 0 && (
+      {(analysis.sfConsiderations ?? []).length > 0 && (
         <div style={{ ...S.card, padding: "12px 16px", marginBottom: 16 }}>
           <div style={{ ...S.label, marginBottom: 6 }}>Cross-Cutting Considerations</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {analysis.sfConsiderations.map((c, i) => (
+            {(analysis.sfConsiderations ?? []).map((c, i) => (
               <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, color: "#8a9ab8" }}>
                 <span style={{ color: "#00c8f044", flexShrink: 0 }}>›</span>
                 {c}
@@ -708,7 +708,7 @@ function ImpactPanel({ analysis, model, input }: {
             fontFamily: "monospace", fontSize: 10, padding: "2px 8px", borderRadius: 4,
             border: `1px solid ${riskColor}44`, background: `${riskColor}15`, color: riskColor,
           }}>
-            {analysis.overallRisk.toUpperCase()} RISK
+            {(analysis.overallRisk ?? "MEDIUM").toUpperCase()} RISK
           </span>
           <span style={{ ...S.label, marginLeft: "auto" }}>
             complexity: {analysis.estimatedComplexity}
@@ -721,7 +721,7 @@ function ImpactPanel({ analysis, model, input }: {
 
       {/* Agent cards grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-        {analysis.activatedAgents.map(a => {
+        {(analysis.activatedAgents ?? []).map(a => {
           const meta = AGENT_META[a.agentId];
           const est = estimateSession(input, 1, model);
           const pStyle = PRIORITY_STYLE[a.priority] ?? PRIORITY_STYLE.optional;
@@ -745,11 +745,11 @@ function ImpactPanel({ analysis, model, input }: {
               <p style={{ fontSize: 12, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 10px" }}>
                 {a.reason}
               </p>
-              {a.sfRisks.length > 0 && (
+              {(a.sfRisks ?? []).length > 0 && (
                 <>
                   <div style={{ ...S.label, marginBottom: 6 }}>Will Check</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {a.sfRisks.slice(0, 3).map((r, i) => (
+                    {(a.sfRisks ?? []).slice(0, 3).map((r, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, color: "#8a9ab8" }}>
                         <span style={{
                           width: 5, height: 5, borderRadius: "50%", marginTop: 3, flexShrink: 0,
@@ -774,11 +774,11 @@ function ImpactPanel({ analysis, model, input }: {
         })}
       </div>
 
-      {analysis.sfConsiderations.length > 0 && (
+      {(analysis.sfConsiderations ?? []).length > 0 && (
         <div style={{ ...S.card, padding: "12px 16px", marginTop: 10 }}>
           <div style={{ ...S.label, marginBottom: 8 }}>Cross-Cutting Considerations</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {analysis.sfConsiderations.map((c, i) => (
+            {(analysis.sfConsiderations ?? []).map((c, i) => (
               <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: "#8a9ab8" }}>
                 <span style={{ color: "#00c8f044", flexShrink: 0 }}>›</span>
                 {c}
@@ -1566,7 +1566,7 @@ export default function ForumTestUI() {
 
   const agentCount = selectionMode && selectedAgentIds.size > 0
     ? selectedAgentIds.size
-    : analysis ? analysis.activatedAgents.length : 7;
+    : analysis ? (analysis.activatedAgents?.length ?? 7) : 7;
   const estimate   = useMemo(
     () => estimateSession(input, agentCount, model),
     [input, agentCount, model]
@@ -1739,7 +1739,7 @@ export default function ForumTestUI() {
       case "impact_analysis":
         setAnalysis(ev.analysis ?? null);
         setAnalysing(false);
-        if (ev.analysis) setActiveAgentIds(new Set(ev.analysis.activatedAgents.map(a => a.agentId)));
+        if (ev.analysis) setActiveAgentIds(new Set((ev.analysis.activatedAgents ?? []).map(a => a.agentId)));
         break;
       case "analysis_error": setAnalysing(false); break;
       case "session_start":
@@ -1814,7 +1814,7 @@ export default function ForumTestUI() {
 
       // Pre-select required + recommended + always-on agents
       const preSelected = new Set<string>([
-        ...data.activatedAgents
+        ...(data.activatedAgents ?? [])
           .filter(a => a.priority !== "optional")
           .map(a => a.agentId),
         ...Array.from(ALWAYS_ON_IDS),
