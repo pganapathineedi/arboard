@@ -1517,7 +1517,7 @@ function SessionSummaryDrawer({
 export default function ForumTestUI() {
   const [model, setModel]               = useState<ModelId>("claude-sonnet-4-6");
   const [apiMode, setApiMode]           = useState<"mock" | "real">("mock");
-  const [input, setInput]               = useState(DEFAULT_INPUT);
+  const [input, setInput]               = useState("");
   const [agents, setAgents]             = useState<AgentOutput[]>([]);
   const [running, setRunning]           = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
