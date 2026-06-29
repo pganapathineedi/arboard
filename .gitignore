@@ -7,3 +7,5 @@ node_modules/
 .dev.pid 
 tsconfig.tsbuildinfo 
 .vercel
+src/structure.txt
+src/structure.txttype
