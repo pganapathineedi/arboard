@@ -84,11 +84,6 @@ const ANALYSE_TOOL: Anthropic.Tool = {
 
 export class ImpactAnalyser {
   static async analyse(input: string, domainId = "salesforce", orgContext?: OrgContext): Promise<ImpactAnalysis> {
-    if (isMockMode()) {
-      await new Promise((r) => setTimeout(r, 800));
-      return getMockImpactAnalysis();
-    }
-
     const anthropic = new Anthropic();
     const orgBlock = orgContext ? PromptBuilder.buildOrgContextBlock(orgContext) : "";
     const userContent = orgBlock
