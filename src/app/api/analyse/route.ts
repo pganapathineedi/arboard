@@ -18,6 +18,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     mode === "real"
       ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
       : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock");
+  console.log("API KEY being used:", process.env.ANTHROPIC_API_KEY?.substring(0, 20));
 
   const input = body.documentText ?? body.input ?? "";
   if (!input.trim()) {
