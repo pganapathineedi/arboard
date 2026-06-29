@@ -1516,6 +1516,7 @@ function SessionSummaryDrawer({
 
 export default function ForumTestUI() {
   const [model, setModel]               = useState<ModelId>("claude-sonnet-4-6");
+  const [apiMode, setApiMode]           = useState<"mock" | "real">("mock");
   const [input, setInput]               = useState(DEFAULT_INPUT);
   const [agents, setAgents]             = useState<AgentOutput[]>([]);
   const [running, setRunning]           = useState(false);
@@ -1709,6 +1710,7 @@ export default function ForumTestUI() {
       const res  = await fetch("/api/upload", { method: "POST", body: form });
       const json = (await res.json()) as UploadResult & { error?: string };
       if (!res.ok || !json.extractedText) { setUploadError(json.error ?? "Upload failed"); return; }
+      setInput("");
       setUploadResult(json);
       setInput(json.extractedText);
       analyzeImpact(json.extractedText);
@@ -1857,6 +1859,8 @@ export default function ForumTestUI() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
+          mode: apiMode,
+          documentContent: !!uploadResult,
           // Revision runs skip agent pre-selection — orchestrator handles agent set
           agentIds: revisionOpts ? revisionOpts.agentIds : (selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined),
           ...(revisionOpts ? { revisionRound: revisionOpts.revisionRound, previousFeedback: revisionOpts.previousFeedback } : {}),
@@ -2052,6 +2056,40 @@ export default function ForumTestUI() {
               disabled={running}
               estimate={estimate}
             />
+
+            {/* API mode toggle */}
+            <div style={{
+              display: "flex", alignItems: "center",
+              background: "#161d2e", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 20, padding: 2, gap: 1,
+            }}>
+              <button
+                onClick={() => !running && setApiMode("mock")}
+                disabled={running}
+                style={{
+                  padding: "4px 12px", borderRadius: 16, fontSize: 11,
+                  fontFamily: "monospace", fontWeight: 600, cursor: running ? "not-allowed" : "pointer",
+                  border: "none", transition: "background 0.2s, color 0.2s",
+                  background: apiMode === "mock" ? "rgba(90,106,138,0.4)" : "transparent",
+                  color: apiMode === "mock" ? "#F0F4FF" : "#7B8DB0",
+                }}
+              >
+                Mock
+              </button>
+              <button
+                onClick={() => !running && setApiMode("real")}
+                disabled={running}
+                style={{
+                  padding: "4px 12px", borderRadius: 16, fontSize: 11,
+                  fontFamily: "monospace", fontWeight: 600, cursor: running ? "not-allowed" : "pointer",
+                  border: "none", transition: "background 0.2s, color 0.2s",
+                  background: apiMode === "real" ? "rgba(232,64,64,0.25)" : "transparent",
+                  color: apiMode === "real" ? "#e84040" : "#7B8DB0",
+                }}
+              >
+                {apiMode === "real" ? "⚡ Live API" : "Live"}
+              </button>
+            </div>
 
             {(showSessionView && !running || selectionMode) && (
               <button
@@ -2386,6 +2424,7 @@ export default function ForumTestUI() {
                         verdict={pendingEndorsement.verdict}
                         scribeNotes={pendingEndorsement.scribeNotes}
                         mustFixIssues={pendingEndorsement.mustFixIssues}
+                        revisionRound={revisionRound}
                         onEndorsed={(key, url) => {
                           setJiraIssueKey(key);
                           setJiraIssueUrl(url);

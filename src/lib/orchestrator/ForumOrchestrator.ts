@@ -208,7 +208,7 @@ export class ForumOrchestrator {
         const designerStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext)) {
+          for await (const chunk of AgentRunner.runStream(effectiveDesigner, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
             if (typeof chunk === "string") {
               designerOutput += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: designer.id, token: chunk })}\n\n`;
@@ -248,7 +248,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext)) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
             if (typeof chunk === "string") {
               content += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
@@ -293,7 +293,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext)) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
             if (typeof chunk === "string") {
               agentContent += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
@@ -381,7 +381,7 @@ export class ForumOrchestrator {
     const agentStart = Date.now();
 
     try {
-      for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext)) {
+      for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent })) {
         if (typeof chunk === "string") {
           yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
         } else {

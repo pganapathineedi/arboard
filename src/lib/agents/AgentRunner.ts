@@ -27,6 +27,7 @@ export class AgentRunner {
     sessionId: string,
     domainId: string,
     orgContext?: OrgContext,
+    metadata?: Record<string, unknown>,
   ): AsyncGenerator<StreamChunk> {
     if (isMockMode()) {
       console.log(`[patterns] MOCK MODE — skipping injection for agent ${agent.name}`);
@@ -49,7 +50,7 @@ export class AgentRunner {
 
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
-      input, clientContext, systemPrompt, metadata: {}, orgContext,
+      input, clientContext, systemPrompt, metadata: metadata ?? {}, orgContext,
     };
 
     const finalCtx = await defaultPipeline(middlewareCtx, async () => middlewareCtx);

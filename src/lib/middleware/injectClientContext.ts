@@ -3,6 +3,7 @@ import { getClientConfig, getClientAgentOverrides } from "@/lib/clients";
 
 export const injectClientContext: MiddlewareFn = async (ctx, next) => {
   if (!process.env.CLIENT_ID) return next();
+  if (ctx.metadata?.documentContent) return next();
 
   const config = await getClientConfig();
   const overrides = await getClientAgentOverrides(config.clientId);

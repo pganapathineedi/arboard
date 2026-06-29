@@ -128,6 +128,7 @@ export interface ForumRequest {
   orgContextStr?: string;   // formatted live org context string, set server-side from MCP
   revisionRound?: number;   // 1, 2, 3 — which iteration this is
   previousFeedback?: string; // Judge's verdict text from the prior round
+  documentContent?: boolean; // true when input came from an uploaded document
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────
