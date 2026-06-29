@@ -1713,7 +1713,6 @@ export default function ForumTestUI() {
       setInput("");
       setUploadResult(json);
       setInput(json.extractedText);
-      analyzeImpact(json.extractedText);
     } catch { setUploadError("Upload failed — network error"); }
     finally {
       setUploading(false);
@@ -1795,7 +1794,7 @@ export default function ForumTestUI() {
   }, []);
 
   const analyzeImpact = async (textOverride?: string) => {
-    const textToAnalyse = textOverride ?? input;
+    const textToAnalyse = textOverride ?? uploadResult?.extractedText ?? input;
     if (!textToAnalyse.trim() || analysing) return;
     setAnalysis(null);
     setAnalysing(true);
