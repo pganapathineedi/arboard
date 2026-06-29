@@ -1812,11 +1812,10 @@ export default function ForumTestUI() {
       const data = await res.json() as ImpactAnalysis;
       setAnalysis(data);
 
-      // Pre-select required + recommended + always-on agents
+      // Pre-select required + recommended + always-on agents; minimum Judge, Scribe, Learner if none activated
+      const activated = data.activatedAgents ?? [];
       const preSelected = new Set<string>([
-        ...(data.activatedAgents ?? [])
-          .filter(a => a.priority !== "optional")
-          .map(a => a.agentId),
+        ...activated.filter(a => a.priority !== "optional").map(a => a.agentId),
         ...Array.from(ALWAYS_ON_IDS),
       ]);
       setSelectedAgentIds(preSelected);
@@ -1881,6 +1880,10 @@ export default function ForumTestUI() {
           if (!line.startsWith("data: ")) continue;
           try { handleEvent(JSON.parse(line.slice(6)) as SSEEvent); } catch { /* skip malformed */ }
         }
+      }
+      // Flush any event remaining in the buffer after stream ends
+      if (buffer.startsWith("data: ")) {
+        try { handleEvent(JSON.parse(buffer.slice(6)) as SSEEvent); } catch { /* skip malformed */ }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") console.error("Stream error:", err);
