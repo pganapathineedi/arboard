@@ -3,11 +3,9 @@ import type { AgentConfig, AgentResult, ClientContext, MiddlewareContext } from 
 import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { defaultPipeline } from "@/lib/middleware";
-import { isMockMode, mockStream, getMockResponse } from "@/lib/mock/mockMode";
+import { mockStream, getMockResponse } from "@/lib/mock/mockMode";
 import { getRelevantPatterns, formatPatternBlock } from "@/lib/patternRetrieval";
 import { WELL_ARCHITECTED_BY_AGENT } from "@/lib/prompt/wellArchitectedPrinciples";
-
-const anthropic = new Anthropic();
 
 export interface UsageData {
   inputTokens: number;
@@ -28,13 +26,15 @@ export class AgentRunner {
     domainId: string,
     orgContext?: OrgContext,
     metadata?: Record<string, unknown>,
+    mode: "real" | "mock" = "mock",
   ): AsyncGenerator<StreamChunk> {
-    if (isMockMode()) {
+    if (mode === "mock") {
       console.log(`[patterns] MOCK MODE — skipping injection for agent ${agent.name}`);
       yield* mockStream(getMockResponse(agent.id));
       return;
     }
 
+    const anthropic = new Anthropic();
     let systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext, undefined, orgContext);
 
     const patterns = await getRelevantPatterns(agent.id);
@@ -93,11 +93,12 @@ export class AgentRunner {
     sessionId: string,
     domainId: string,
     orgContext?: OrgContext,
+    mode: "real" | "mock" = "mock",
   ): Promise<AgentResult> {
     const start = Date.now();
     let content = "";
 
-    for await (const chunk of AgentRunner.runStream(agent, input, clientContext, sessionId, domainId, orgContext)) {
+    for await (const chunk of AgentRunner.runStream(agent, input, clientContext, sessionId, domainId, orgContext, undefined, mode)) {
       if (typeof chunk === "string") content += chunk;
     }
 

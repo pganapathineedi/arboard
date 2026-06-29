@@ -222,7 +222,7 @@ export function ClientContextBanner() {
             fontSize: 10, color: "#7B8DB0",
             paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.04)",
           }}>
-            All agent responses will include ACC NZ guardrails. Violations of data residency, accessibility, or security rules will be escalated as <span style={{ color: "#e84040" }}>MUST-FIX</span>.
+            All agent responses will include NovaPeak guardrails. Violations of data residency, accessibility, or security rules will be escalated as <span style={{ color: "#e84040" }}>MUST-FIX</span>.
           </div>
         </div>
       )}

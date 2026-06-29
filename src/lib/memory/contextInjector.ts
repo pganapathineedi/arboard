@@ -2,8 +2,10 @@ import type { MemoryContext } from './jiraMemoryRetriever';
 
 function buildMemoryBlock(adrs: MemoryContext['relevantADRs']): string {
   const lines = [
-    '## Institutional Memory — Past ARBoard Decisions',
-    'The following past decisions are provided for context. Use them to maintain consistency with prior architecture choices.',
+    'PRIOR REVIEW CONTEXT (for awareness only — do not anchor on these findings):',
+    'The following issues were flagged in a previous ARB review of this design.',
+    'Assess the current design independently first, then reference this context',
+    'to note whether prior issues have been resolved, persist, or have changed in severity.',
     '',
   ];
 

@@ -17,6 +17,7 @@ interface AgentOutput {
   role: string;
   content: string;
   complete: boolean;
+  skipped?: boolean;
   error?: string;
   startTime: number;
   durationMs?: number;
@@ -24,6 +25,21 @@ interface AgentOutput {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+}
+
+interface DissentAgent {
+  name: string;
+  risk_level: "HIGH" | "MEDIUM" | "LOW";
+  key_concern: string;
+  recommendation: string;
+  aligns_with_verdict: boolean;
+  dissent_reason: string | null;
+}
+
+interface DissentData {
+  dissent_summary: string;
+  total_dissenting: number;
+  agents: DissentAgent[];
 }
 
 interface SSEEvent {
@@ -36,6 +52,7 @@ interface SSEEvent {
   error?: string;
   analysis?: ImpactAnalysis;
   agentCount?: number;
+  status?: string;
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -50,6 +67,10 @@ interface SSEEvent {
   humanJudgementPoints?: string[];
   scribeNotes?: string;
   mustFixIssues?: string[];
+  // dissent_analysis fields
+  dissent_summary?: string;
+  total_dissenting?: number;
+  agents?: DissentAgent[];
 }
 
 interface PendingEndorsement {
@@ -128,7 +149,7 @@ const FORMAT_LABELS: Record<string, string> = {
 };
 
 const DEFAULT_INPUT =
-  "Build a Customer 360 self-service portal on Experience Cloud for B2C customers to view real-time SAP order status, submit service cases, and receive Einstein Bot-assisted case deflection. The portal integrates with SAP S/4HANA via MuleSoft Anypoint Platform. Order data (current and 24-month history) must be scoped to the authenticated customer's account only. Einstein Bots should handle initial case triage and deflect common queries before routing to human agents. The solution must support 50,000 active portal users and up to 10 million order records within 24 months of launch.";
+  "NovaPeak Financial Services requires migration of core banking workflows to Salesforce Financial Services Cloud, with a self-service client portal on Experience Cloud for B2C customers to view real-time transaction data, submit service cases, and receive Einstein Bot-assisted case deflection. The portal integrates with NovaPeak's core banking system via MuleSoft Anypoint Platform. Transaction data must be scoped to the authenticated client's account only and comply with APRA-CPS234. Einstein Bots should handle initial case triage and deflect common queries before routing to human agents. The solution must support 50,000 active portal users and up to 10 million transaction records within 24 months of launch.";
 
 const ACCEPTED = ".pdf,.doc,.docx";
 
@@ -245,6 +266,7 @@ function getAgentStatus(
   const a = agents.find(x => x.agentId === agentId);
   if (a) {
     if (a.error)    return "error";
+    if (a.skipped)  return "skipped";
     if (!a.complete) return "active";
     const conf = parseConfidence(a.content);
     return conf !== null && conf < 5 ? "warn" : "done";
@@ -461,7 +483,7 @@ const ALWAYS_ON_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 
 function AgentSelectorPanel({
   analysis, model, input, selectedAgentIds, onToggle, onReset, onRun,
-  lastSyncTime, orgConnected, onRefreshOrg,
+  lastSyncTime, orgConnected, onRefreshOrg, documentMode,
 }: {
   analysis: ImpactAnalysis;
   model: ModelId;
@@ -473,6 +495,7 @@ function AgentSelectorPanel({
   lastSyncTime: Date | null;
   orgConnected: boolean;
   onRefreshOrg: () => void;
+  documentMode?: boolean;
 }) {
   const analysisAgentSet = new Set((analysis.activatedAgents ?? []).map(a => a.agentId));
   const addableAgents = ALL_AGENT_IDS.filter(id => !analysisAgentSet.has(id));
@@ -521,19 +544,20 @@ function AgentSelectorPanel({
         {(analysis.activatedAgents ?? []).map(a => {
           const meta = AGENT_META[a.agentId];
           const isAlwaysOn = ALWAYS_ON_IDS.has(a.agentId);
+          const isDesignerSkipped = !!documentMode && a.agentId === "sf-designer";
           const isSelected = selectedAgentIds.has(a.agentId);
           const pStyle = PRIORITY_STYLE[a.priority] ?? PRIORITY_STYLE.optional;
           return (
             <div
               key={a.agentId}
-              onClick={() => !isAlwaysOn && onToggle(a.agentId)}
+              onClick={() => !isAlwaysOn && !isDesignerSkipped && onToggle(a.agentId)}
               style={{
                 ...S.card,
                 border: isSelected ? `1px solid ${meta?.color ?? "#7B8DB0"}55` : "1px solid rgba(255,255,255,0.04)",
                 borderTop: isSelected ? `2px solid ${meta?.color ?? "#7B8DB0"}` : "2px solid rgba(255,255,255,0.08)",
                 padding: 14,
-                opacity: isSelected ? 1 : 0.45,
-                cursor: isAlwaysOn ? "default" : "pointer",
+                opacity: isDesignerSkipped ? 0.3 : isSelected ? 1 : 0.45,
+                cursor: isAlwaysOn || isDesignerSkipped ? "default" : "pointer",
                 transition: "opacity 0.2s, border-color 0.2s",
               }}
             >
@@ -543,8 +567,8 @@ function AgentSelectorPanel({
                   {a.agentName}
                 </span>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: pStyle.bg, color: pStyle.text }}>
-                    {a.priority.toUpperCase()}
+                  <span style={{ ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: isDesignerSkipped ? PRIORITY_STYLE.optional.bg : pStyle.bg, color: isDesignerSkipped ? "#7B8DB0" : pStyle.text }}>
+                    {isDesignerSkipped ? "SKIPPED" : a.priority.toUpperCase()}
                   </span>
                   <span style={{ fontSize: 13, color: isAlwaysOn ? "#5a6a8a" : isSelected ? "#0fba7a" : "#5a6a8a" }}>
                     {isAlwaysOn ? "🔒" : isSelected ? "✓" : "○"}
@@ -552,7 +576,7 @@ function AgentSelectorPanel({
                 </div>
               </div>
               <p style={{ fontSize: 11, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 8px" }}>
-                {a.reason}
+                {isDesignerSkipped ? "Review mode — design already exists" : a.reason}
               </p>
               {(a.sfRisks ?? []).slice(0, 2).map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 10, color: "#7B8DB0", marginBottom: 3 }}>
@@ -689,10 +713,11 @@ function AgentSelectorPanel({
 
 // ── ImpactPanel ───────────────────────────────────────────────────────────────
 
-function ImpactPanel({ analysis, model, input }: {
+function ImpactPanel({ analysis, model, input, documentMode }: {
   analysis: ImpactAnalysis;
   model: ModelId;
   input: string;
+  documentMode?: boolean;
 }) {
   const riskColor = RISK_SEVERITY_COLOR[analysis.overallRisk] ?? "#7B8DB0";
   return (
@@ -725,50 +750,60 @@ function ImpactPanel({ analysis, model, input }: {
           const meta = AGENT_META[a.agentId];
           const est = estimateSession(input, 1, model);
           const pStyle = PRIORITY_STYLE[a.priority] ?? PRIORITY_STYLE.optional;
+          const isDesignerSkipped = !!documentMode && a.agentId === "sf-designer";
           return (
             <div key={a.agentId} style={{
               ...S.card,
               border: `1px solid ${meta?.color ?? "#7B8DB0"}33`,
               padding: 14,
               borderTop: `2px solid ${meta?.color ?? "#7B8DB0"}`,
+              opacity: isDesignerSkipped ? 0.5 : 1,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>{meta?.icon ?? "🤖"}</span>
                 <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: meta?.color ?? "#F0F4FF" }}>
                   {a.agentName}
                 </span>
-                <span style={{ marginLeft: "auto", ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: pStyle.bg, color: pStyle.text }}>
-                  {a.priority.toUpperCase()}
+                <span style={{ marginLeft: "auto", ...S.label, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: isDesignerSkipped ? PRIORITY_STYLE.optional.bg : pStyle.bg, color: isDesignerSkipped ? "#7B8DB0" : pStyle.text }}>
+                  {isDesignerSkipped ? "SKIPPED" : a.priority.toUpperCase()}
                 </span>
               </div>
-              <div style={{ ...S.label, marginBottom: 4 }}>Why Triggered</div>
-              <p style={{ fontSize: 12, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 10px" }}>
-                {a.reason}
-              </p>
-              {(a.sfRisks ?? []).length > 0 && (
+              {isDesignerSkipped ? (
+                <p style={{ fontSize: 12, color: "#8a9ab8", lineHeight: 1.5, margin: 0 }}>
+                  Review mode — design already exists
+                </p>
+              ) : (
                 <>
-                  <div style={{ ...S.label, marginBottom: 6 }}>Will Check</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {(a.sfRisks ?? []).slice(0, 3).map((r, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, color: "#8a9ab8" }}>
-                        <span style={{
-                          width: 5, height: 5, borderRadius: "50%", marginTop: 3, flexShrink: 0,
-                          background: i === 0 ? "#e84040" : i === 1 ? "#f0a020" : "#0fba7a",
-                        }} />
-                        {r}
+                  <div style={{ ...S.label, marginBottom: 4 }}>Why Triggered</div>
+                  <p style={{ fontSize: 12, color: "#8a9ab8", lineHeight: 1.5, margin: "0 0 10px" }}>
+                    {a.reason}
+                  </p>
+                  {(a.sfRisks ?? []).length > 0 && (
+                    <>
+                      <div style={{ ...S.label, marginBottom: 6 }}>Will Check</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {(a.sfRisks ?? []).slice(0, 3).map((r, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, color: "#8a9ab8" }}>
+                            <span style={{
+                              width: 5, height: 5, borderRadius: "50%", marginTop: 3, flexShrink: 0,
+                              background: i === 0 ? "#e84040" : i === 1 ? "#f0a020" : "#0fba7a",
+                            }} />
+                            {r}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+                      Est. ~{meta?.estSeconds ?? 30}s
+                    </span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+                      ~{formatCost(est.cost)}
+                    </span>
                   </div>
                 </>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
-                  Est. ~{meta?.estSeconds ?? 30}s
-                </span>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
-                  ~{formatCost(est.cost)}
-                </span>
-              </div>
             </div>
           );
         })}
@@ -1042,7 +1077,7 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
       ...S.card,
       border: `1px solid ${borderColor}33`,
       borderTop: `2px solid ${borderColor}`,
-      overflow: "hidden",
+      overflow: "auto",
     }}>
       {sectionLabel && <SectionDivider label={sectionLabel} />}
 
@@ -1424,9 +1459,10 @@ function SessionSummaryDrawer({
   const accurate = Math.abs(tokenDiffPct) <= 20;
 
   const useReal = agents.some(a => a.outputTokens !== undefined);
-  const maxTokens = Math.max(...agents.map(a =>
-    useReal ? (a.outputTokens ?? 0) : Math.ceil(a.content.length / 4)
-  ), 1);
+  const maxTokens = Math.max(...agents
+    .filter(a => !a.skipped)
+    .map(a => useReal ? (a.outputTokens ?? 0) : Math.ceil(a.content.length / 4))
+  , 1);
 
   return (
     <div
@@ -1480,11 +1516,27 @@ function SessionSummaryDrawer({
         <div style={{ ...S.label, marginBottom: 10 }}>Per-Agent Breakdown</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {agents.filter(a => a.complete && !a.error).map(a => {
+            const meta = AGENT_META[a.agentId];
+            if (a.skipped) {
+              return (
+                <div key={a.agentId} style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.4 }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF", width: 80, flexShrink: 0 }}>
+                    {meta?.shortName ?? a.agentName}
+                  </span>
+                  <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.04)", borderRadius: 3 }} />
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 70, textAlign: "right", flexShrink: 0 }}>
+                    skipped
+                  </span>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 40, textAlign: "right", flexShrink: 0 }}>
+                    —
+                  </span>
+                </div>
+              );
+            }
             const tokens = useReal
               ? (a.outputTokens ?? Math.ceil(a.content.length / 4))
               : Math.ceil(a.content.length / 4);
             const barPct = Math.round((tokens / maxTokens) * 100);
-            const meta = AGENT_META[a.agentId];
             return (
               <div key={a.agentId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF", width: 80, flexShrink: 0 }}>
@@ -1512,12 +1564,123 @@ function SessionSummaryDrawer({
   );
 }
 
+// ── DissentPanel ─────────────────────────────────────────────────────────────
+
+function DissentPanel({ data }: { data: DissentData }) {
+  const [open, setOpen] = useState(true);
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+
+  const riskColor = (level: string) =>
+    level === "HIGH" ? "#e84040" : level === "MEDIUM" ? "#f0a020" : "#0fba7a";
+
+  const badgeColor = data.total_dissenting > 0 ? "#f0a020" : "#0fba7a";
+
+  return (
+    <div style={{ ...S.panel, marginTop: 24, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 18px", background: "transparent", border: "none", cursor: "pointer",
+          borderBottom: open ? "1px solid rgba(255,255,255,0.06)" : "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#F0F4FF" }}>
+            Agent Dissent Analysis
+          </span>
+          <span style={{
+            fontFamily: "monospace", fontSize: 10, padding: "2px 10px", borderRadius: 12,
+            background: `${badgeColor}18`, color: badgeColor,
+            border: `1px solid ${badgeColor}44`,
+          }}>
+            {data.total_dissenting} of {data.agents.length} agents dissented
+          </span>
+        </div>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "14px 18px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 12px", marginBottom: 4 }}>
+            <span style={{ ...S.label, fontSize: 9 }}>Agent</span>
+            <span style={{ ...S.label, fontSize: 9, flexShrink: 0, minWidth: 46 }}>Risk</span>
+            <span style={{ ...S.label, fontSize: 9, flex: 1 }}>Concern</span>
+            <span style={{ ...S.label, fontSize: 9, flexShrink: 0 }}>Verdict</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+            {data.agents.map(agent => {
+              const isExpanded = expandedAgent === agent.name;
+              const canExpand = !agent.aligns_with_verdict && !!agent.dissent_reason;
+              return (
+                <div key={agent.name}>
+                  <div
+                    onClick={() => canExpand && setExpandedAgent(isExpanded ? null : agent.name)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
+                      background: "#0f1420",
+                      borderRadius: isExpanded ? "6px 6px 0 0" : 6,
+                      border: `1px solid ${agent.aligns_with_verdict ? "rgba(255,255,255,0.05)" : "rgba(240,160,32,0.2)"}`,
+                      cursor: canExpand ? "pointer" : "default",
+                    }}
+                  >
+                    <Chip label={agent.name} color={agent.aligns_with_verdict ? "#7B8DB0" : "#f0a020"} />
+                    <span style={{
+                      fontFamily: "monospace", fontSize: 9, padding: "2px 7px", borderRadius: 4,
+                      background: `${riskColor(agent.risk_level)}18`,
+                      color: riskColor(agent.risk_level),
+                      border: `1px solid ${riskColor(agent.risk_level)}33`,
+                      flexShrink: 0,
+                    }}>
+                      {agent.risk_level}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#8a9ab8", flex: 1, lineHeight: 1.4 }}>
+                      {agent.key_concern}
+                    </span>
+                    <span style={{
+                      fontFamily: "monospace", fontSize: 10, flexShrink: 0,
+                      color: agent.aligns_with_verdict ? "#0fba7a" : "#f0a020",
+                    }}>
+                      {agent.aligns_with_verdict ? "✓ Aligned" : "⚡ Dissented"}
+                    </span>
+                  </div>
+                  {isExpanded && agent.dissent_reason && (
+                    <div style={{
+                      padding: "10px 14px",
+                      background: "rgba(240,160,32,0.05)",
+                      border: "1px solid rgba(240,160,32,0.2)", borderTop: "none",
+                      borderRadius: "0 0 6px 6px",
+                      fontSize: 12, color: "#F0F4FF", lineHeight: 1.6,
+                    }}>
+                      {agent.dissent_reason}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{
+            paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)",
+            fontSize: 11, color: "#7B8DB0", fontStyle: "italic", lineHeight: 1.5,
+          }}>
+            {data.dissent_summary}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function ForumTestUI() {
   const [model, setModel]               = useState<ModelId>("claude-sonnet-4-6");
   const [apiMode, setApiMode]           = useState<"mock" | "real">("mock");
   const [input, setInput]               = useState("");
+  const [inputMode, setInputMode]       = useState<"review" | "greenfield" | "debate" | null>(null);
   const [agents, setAgents]             = useState<AgentOutput[]>([]);
   const [running, setRunning]           = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -1550,9 +1713,13 @@ export default function ForumTestUI() {
   const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
   const [patternDetails, setPatternDetails] = useState<{ id: string; title: string; severity: string }[]>([]);
 
+  const [priorTicket, setPriorTicket]                 = useState("");
+  const [debateFocusAreas, setDebateFocusAreas]       = useState("");
   const [revisionRound, setRevisionRound]             = useState(0);
   const [previousFeedback, setPreviousFeedback]       = useState("");
   const [pendingEndorsement, setPendingEndorsement]   = useState<PendingEndorsement | null>(null);
+  const [tokenUsage, setTokenUsage]                   = useState<{ agent: string; input: number; output: number }[]>([]);
+  const [dissentData, setDissentData]                 = useState<DissentData | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -1760,7 +1927,7 @@ export default function ForumTestUI() {
       case "agent_complete":
         setAgents(prev => prev.map(a =>
           a.agentId === ev.agentId
-            ? { ...a, complete: true, durationMs: ev.durationMs, inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, cacheReadTokens: ev.cacheReadTokens, cacheWriteTokens: ev.cacheWriteTokens }
+            ? { ...a, complete: true, skipped: ev.status === "skipped", durationMs: ev.durationMs, inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, cacheReadTokens: ev.cacheReadTokens, cacheWriteTokens: ev.cacheWriteTokens }
             : a
         ));
         break;
@@ -1784,6 +1951,16 @@ export default function ForumTestUI() {
           scribeNotes:          ev.scribeNotes          ?? "",
           mustFixIssues:        ev.mustFixIssues        ?? [],
         });
+        break;
+      case "dissent_analysis":
+        console.log("[dissent] event received:", ev);
+        if (ev.dissent_summary !== undefined) {
+          setDissentData({
+            dissent_summary: ev.dissent_summary,
+            total_dissenting: ev.total_dissenting ?? 0,
+            agents: ev.agents ?? [],
+          });
+        }
         break;
       case "session_complete":
         setSessionComplete(true);
@@ -1841,8 +2018,10 @@ export default function ForumTestUI() {
     setAgents([]); setSessionId(null);
     setSessionComplete(false); setShowSummaryDrawer(false);
     setSessionEndTime(null); setSessionStartTime(null);
+    setTokenUsage([]);
     setActiveAgentIds(new Set(selectedAgentIds));
     if (revisionOpts) setRevisionRound(revisionOpts.revisionRound);
+    else if (priorTicket.trim()) setRevisionRound(2);
     setRunning(true);
     setSelectionMode(false);
     abortRef.current = new AbortController();
@@ -1860,6 +2039,9 @@ export default function ForumTestUI() {
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
           mode: apiMode,
           documentContent: !!uploadResult,
+          priorTicket: priorTicket.trim() || null,
+          inputMode: inputMode ?? "review",
+          debateFocusAreas: debateFocusAreas.trim() || null,
           // Revision runs skip agent pre-selection — orchestrator handles agent set
           agentIds: revisionOpts ? revisionOpts.agentIds : (selectedAgentIds.size > 0 ? Array.from(selectedAgentIds) : undefined),
           ...(revisionOpts ? { revisionRound: revisionOpts.revisionRound, previousFeedback: revisionOpts.previousFeedback } : {}),
@@ -1870,6 +2052,7 @@ export default function ForumTestUI() {
       const decoder = new TextDecoder();
       if (!reader) return;
       let buffer = "";
+      let pendingEvent = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1877,8 +2060,17 @@ export default function ForumTestUI() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
+          if (line.startsWith("event: ")) { pendingEvent = line.slice(7).trim(); continue; }
           if (!line.startsWith("data: ")) continue;
-          try { handleEvent(JSON.parse(line.slice(6)) as SSEEvent); } catch { /* skip malformed */ }
+          try {
+            if (pendingEvent === "token_usage") {
+              const d = JSON.parse(line.slice(6)) as { agent: string; inputTokens: number; outputTokens: number };
+              setTokenUsage(prev => [...prev, { agent: d.agent, input: d.inputTokens, output: d.outputTokens }]);
+            } else {
+              handleEvent(JSON.parse(line.slice(6)) as SSEEvent);
+            }
+          } catch { /* skip malformed */ }
+          pendingEvent = "";
         }
       }
       // Flush any event remaining in the buffer after stream ends
@@ -1908,7 +2100,11 @@ export default function ForumTestUI() {
     setPatternDetails([]);
     setRevisionRound(0);
     setPreviousFeedback("");
+    setPriorTicket("");
+    setDebateFocusAreas("");
     setPendingEndorsement(null);
+    setTokenUsage([]);
+    setDissentData(null);
   };
 
   const handleCountersign = useCallback(async (name: string, role: string) => {
@@ -2141,7 +2337,35 @@ export default function ForumTestUI() {
               modelLabel={MODEL_CONFIG[model].label}
             />}
 
-            {/* Upload zone — hidden once a file is loaded */}
+            {/* Mode selector */}
+            <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
+              {([
+                { id: "review",     icon: "📄", title: "Review Existing Design",    sub: "Upload an SDD or architecture document for ARB review",                        tags: ["Designer skipped", "Specialists review", "Judge verdicts"] },
+                { id: "greenfield", icon: "⚡", title: "Design from Requirements",  sub: "Describe a business requirement — agents propose and debate a solution",        tags: ["Designer proposes", "Full debate", "Judge verdicts"] },
+                { id: "debate",     icon: "🧠", title: "Debate My Approach",        sub: "Describe your proposed architecture — agents will challenge and stress-test it", tags: ["Designer critiques", "Specialists challenge", "Judge verdicts"] },
+              ] as const).map(m => (
+                <div key={m.id} onClick={() => setInputMode(m.id)}
+                  style={{
+                    flex: 1, padding: 16, borderRadius: 8,
+                    border: `1px solid ${inputMode === m.id ? "#00d4ff" : "#333"}`,
+                    background: inputMode === m.id ? "rgba(0,212,255,0.05)" : "#0d0d1a",
+                    opacity: inputMode && inputMode !== m.id ? 0.4 : 1,
+                    cursor: "pointer", transition: "all 0.2s",
+                  }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>{m.icon}</div>
+                  <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#e0e0e0", marginBottom: 6 }}>{m.title}</div>
+                  <div style={{ fontSize: 11, color: "#7B8DB0", marginBottom: 10 }}>{m.sub}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {m.tags.map(t => (
+                      <span key={t} style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: "#7B8DB0", fontFamily: "monospace" }}>{t}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Upload zone — shown in review mode */}
+            {inputMode === "review" && (
             <div
               onDragOver={e => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
@@ -2181,9 +2405,10 @@ export default function ForumTestUI() {
                 {uploadError && <span style={{ fontSize: 11, color: "#e84040", marginLeft: "auto" }}>{uploadError}</span>}
               </div>
             </div>
+            )}
 
             {/* File card — shown after a successful upload */}
-            {uploadResult && (
+            {inputMode === "review" && uploadResult && (
               <div style={{
                 border: "2px dashed rgba(255,255,255,0.08)",
                 borderRadius: 8, padding: "12px 16px", marginBottom: 12,
@@ -2208,7 +2433,7 @@ export default function ForumTestUI() {
             )}
 
             {/* Detected context */}
-            {uploadResult && hasDetected && (
+            {inputMode === "review" && uploadResult && hasDetected && (
               <div style={{
                 border: `1px solid ${ctxApplied ? "rgba(15,186,122,0.3)" : "rgba(0,200,240,0.25)"}`,
                 background: ctxApplied ? "rgba(15,186,122,0.04)" : "rgba(0,200,240,0.04)",
@@ -2260,13 +2485,13 @@ export default function ForumTestUI() {
               <OrgHealthPanel orgContext={orgContext} />
             )}
 
-            {/* Textarea — hidden when a document is loaded */}
-            {!uploadResult && (
+            {/* Textarea — shown for greenfield and debate modes */}
+            {(inputMode === "greenfield" || inputMode === "debate") && (
               <div style={{ marginBottom: 12 }}>
                 <textarea
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  placeholder="Describe your Salesforce architecture challenge or upload a document above…"
+                  placeholder={inputMode === "debate" ? "Describe your proposed architecture approach..." : "Describe your business requirement..."}
                   style={{
                     width: "100%", height: 160, resize: "vertical",
                     background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
@@ -2281,27 +2506,90 @@ export default function ForumTestUI() {
               </div>
             )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <button
-                onClick={() => analyzeImpact()}
-                disabled={!input.trim()}
-                style={{
-                  padding: "10px 28px", background: "#00c8f0", color: "#07090f",
-                  fontWeight: 700, fontSize: 14, borderRadius: 8,
-                  cursor: !input.trim() ? "not-allowed" : "pointer",
-                  border: "none", opacity: !input.trim() ? 0.4 : 1,
-                  transition: "opacity 0.2s",
-                }}
-              >
-                Analyze Impact
-              </button>
-              {ctxApplied && (
-                <span style={{ fontSize: 12, color: "#0fba7a", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0fba7a", display: "inline-block" }} />
-                  Client context applied
-                </span>
-              )}
-            </div>
+            {/* Focus areas — debate mode only */}
+            {inputMode === "debate" && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ ...S.label, marginBottom: 6 }}>Focus Areas (Optional)</div>
+                <input
+                  type="text"
+                  value={debateFocusAreas}
+                  onChange={e => setDebateFocusAreas(e.target.value)}
+                  placeholder="e.g. governor limits, security model, integration patterns"
+                  style={{
+                    background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#F0F4FF",
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    outline: "none", width: "100%",
+                    transition: "border-color 0.2s",
+                  }}
+                  onFocus={e => (e.target.style.borderColor = "rgba(240,160,32,0.5)")}
+                  onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.07)")}
+                />
+              </div>
+            )}
+
+            {/* Prior ADR ticket — review mode only */}
+            {inputMode === "review" && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ ...S.label, marginBottom: 6 }}>
+                    Re-submission? Enter prior ADR ticket (e.g. ARBOARD-17)
+                  </div>
+                  <input
+                    type="text"
+                    value={priorTicket}
+                    onChange={e => setPriorTicket(e.target.value)}
+                    placeholder="ARBOARD-XX"
+                    style={{
+                      background: "#0f1420", border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#F0F4FF",
+                      fontFamily: "system-ui, -apple-system, sans-serif",
+                      outline: "none", width: 220,
+                      transition: "border-color 0.2s",
+                    }}
+                    onFocus={e => (e.target.style.borderColor = "rgba(240,160,32,0.5)")}
+                    onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.07)")}
+                  />
+                </div>
+
+                {priorTicket.trim() && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 14px", marginBottom: 12,
+                    background: "rgba(159,112,245,0.08)",
+                    border: "1px solid rgba(159,112,245,0.25)",
+                    borderRadius: 8, fontSize: 12, color: "#9f70f5",
+                  }}>
+                    <span>↻</span>
+                    <span>Revision 2 — {priorTicket.trim()} — Agents will assess remediation of prior defects</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {inputMode && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <button
+                  onClick={() => analyzeImpact()}
+                  disabled={!input.trim()}
+                  style={{
+                    padding: "10px 28px", background: "#00c8f0", color: "#07090f",
+                    fontWeight: 700, fontSize: 14, borderRadius: 8,
+                    cursor: !input.trim() ? "not-allowed" : "pointer",
+                    border: "none", opacity: !input.trim() ? 0.4 : 1,
+                    transition: "opacity 0.2s",
+                  }}
+                >
+                  Analyze Impact
+                </button>
+                {ctxApplied && (
+                  <span style={{ fontSize: 12, color: "#0fba7a", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0fba7a", display: "inline-block" }} />
+                    Client context applied
+                  </span>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -2329,14 +2617,15 @@ export default function ForumTestUI() {
             lastSyncTime={lastSyncTime}
             orgConnected={orgStatus === "connected"}
             onRefreshOrg={handleOrgRefresh}
+            documentMode={!!uploadResult}
           />
         )}
 
         {/* ══ SESSION VIEW ══════════════════════════════════════════════════════ */}
         {showSessionView && (
           <>
-            {/* Revision round indicator */}
-            {revisionRound > 0 && (
+            {/* Revision round / re-submission indicator */}
+            {(revisionRound > 0 || priorTicket.trim()) && (
               <div style={{
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "8px 14px", marginBottom: 12,
@@ -2345,14 +2634,18 @@ export default function ForumTestUI() {
                 borderRadius: 8, fontSize: 12, color: "#9f70f5",
               }}>
                 <span>↻</span>
-                <span>Revision Round {revisionRound + 1} — Designer phase skipped, addressing prior Judge feedback</span>
+                <span>
+                  {priorTicket.trim()
+                    ? `Revision 2 — ${priorTicket.trim()} — Agents will assess remediation of prior defects`
+                    : `Revision Round ${revisionRound + 1} — Designer phase skipped, addressing prior Judge feedback`}
+                </span>
               </div>
             )}
 
             {/* Impact analysis result → agent roster */}
             {analysis && (
               <>
-                <ImpactPanel analysis={analysis} model={model} input={input} />
+                <ImpactPanel analysis={analysis} model={model} input={input} documentMode={!!uploadResult} />
                 <AgentRoster
                   agents={agents}
                   activeAgentIds={activeAgentIds}
@@ -2374,6 +2667,7 @@ export default function ForumTestUI() {
                 {/* RIGHT: Forum discussion */}
                 <div ref={forumRef} style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {agents.map((agent, idx) => {
+                    if (agent.skipped) return null;
                     const sectionLabel = getSectionLabel(agent, idx);
                     return (
                       <div key={agent.agentId}>
@@ -2406,6 +2700,9 @@ export default function ForumTestUI() {
                       }}
                     />
                   )}
+
+                  {/* Dissent Analysis */}
+                  {dissentData && <DissentPanel data={dissentData} />}
 
                   {/* Endorsement Panel */}
                   {sessionComplete && pendingEndorsement && (
@@ -2581,6 +2878,19 @@ export default function ForumTestUI() {
           onProceed={() => { setShowSetupModal(false); startConnect(); }}
         />
       )}
+
+      {/* ══ TOKEN COST PILL ══════════════════════════════════════════════════ */}
+      {tokenUsage.length > 0 && (() => {
+        const totalIn  = tokenUsage.reduce((s, t) => s + t.input,  0);
+        const totalOut = tokenUsage.reduce((s, t) => s + t.output, 0);
+        const cost = (totalIn / 1_000_000 * 3) + (totalOut / 1_000_000 * 15);
+        return (
+          <div style={{ position: "fixed", bottom: "1rem", right: "1rem", background: "#1a1a2e", border: "1px solid #333", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#ccc", zIndex: 1000, cursor: "pointer" }}>
+            <span style={{ color: "#4ade80", fontWeight: 600 }}>💰 ${cost.toFixed(4)}</span>
+            <span style={{ marginLeft: "8px", opacity: 0.6 }}>{(totalIn + totalOut).toLocaleString()} tokens</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

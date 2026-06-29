@@ -18,11 +18,19 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "input is required" }, { status: 400 });
   }
 
+  const mode = (body as { mode?: string }).mode === "real" ? "real" : "mock";
+  process.env.ANTHROPIC_API_KEY =
+    mode === "real"
+      ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
+      : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock");
+  console.log('[route] REAL key present:', !!process.env.ANTHROPIC_API_KEY_REAL, 'ANTHROPIC_API_KEY after set:', process.env.ANTHROPIC_API_KEY?.slice(0, 15));
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
       try {
-        for await (const chunk of ForumOrchestrator.streamForum(body)) {
+        console.log('[route] calling streamForum with mode:', mode);
+        for await (const chunk of ForumOrchestrator.streamForum(body, mode)) {
           controller.enqueue(encoder.encode(chunk));
         }
       } catch (err) {

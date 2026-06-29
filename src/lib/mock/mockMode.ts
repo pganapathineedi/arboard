@@ -18,7 +18,7 @@ export async function* mockStream(text: string): AsyncGenerator<string> {
 export function getMockImpactAnalysis(): ImpactAnalysis {
   return {
     summary:
-      "The request involves building a Customer 360 self-service portal on Experience Cloud with real-time SAP order integration via MuleSoft and Einstein Bot-powered case deflection. This spans multiple Salesforce clouds, a complex integration layer, and significant UI customisation — representing high architectural complexity with cross-cutting governor limit risk.",
+      "NovaPeak Financial Services requires migration of core banking workflows to Salesforce Financial Services Cloud, with a self-service client portal on Experience Cloud and real-time transaction processing via MuleSoft. This spans FSC data model changes, complex Apex integrations, and regulatory compliance under APRA-CPS234 — representing high architectural complexity with cross-cutting governor limit risk.",
     overallRisk: "high",
     estimatedComplexity: "high",
     activatedAgents: [
@@ -116,7 +116,7 @@ export function getMockImpactAnalysis(): ImpactAnalysis {
 
 const MOCK_RESPONSES: Record<string, string> = {
   "sf-designer": `## Architecture Assessment
-The request covers a Customer 360 self-service portal on Salesforce Experience Cloud, integrated with SAP S/4HANA via MuleSoft for real-time order data, and Einstein Bot-driven case deflection. The scope spans Sales Cloud (account/contact), Service Cloud (cases, bots), and Experience Cloud (portal), with an external integration layer. This is a multi-cloud, mid-to-high complexity initiative that requires careful data architecture and security model design before any sprint begins.
+NovaPeak Financial Services requires migration of core banking workflows to Salesforce Financial Services Cloud, integrated with the core banking system via MuleSoft for real-time transaction data, and Einstein Bot-driven case deflection. The scope spans FSC (client/account hierarchy), Service Cloud (cases, bots), and Experience Cloud (client portal), with an external integration layer. This is a multi-cloud, mid-to-high complexity initiative that requires careful data architecture and security model design before any sprint begins.
 
 ## Recommended Approach
 1. **Single-org strategy** — keep all clouds in one production org to avoid cross-org data replication complexity. Use permission set groups to isolate Experience Cloud portal access.
@@ -373,14 +373,14 @@ MUST FIX:
 
 Rationale: Specialist agents were broadly aligned on architecture direction with no fundamental disagreements, but two unresolved risk items — the sharing model test coverage and the LDV skinny table dependency — carry enough uncertainty that a human architect must validate the conditions before build can proceed.`,
 
-  "sf-scribe": `## Architecture Decision Record — Customer 360 Portal
+  "sf-scribe": `## Architecture Decision Record — NovaPeak Customer Portal
 
 **ADR-2024-001 | Status: APPROVED WITH CONDITIONS | Date: ${new Date().toISOString().split("T")[0]}**
 
 ---
 
 ### Context
-Telco client requires a self-service Customer 360 portal for B2C customers to view real-time SAP order status, submit service cases, and receive Einstein Bot-assisted case deflection. The platform decision is Salesforce Experience Cloud (LWR) integrated with SAP S/4HANA via MuleSoft Anypoint.
+NovaPeak Financial Services requires a self-service client portal for B2C customers to view real-time banking transaction data, submit service cases, and receive Einstein Bot-assisted case deflection. The platform decision is Salesforce Financial Services Cloud with Experience Cloud (LWR) integrated with the core banking system via MuleSoft Anypoint.
 
 ### Architectural Decisions
 
@@ -423,7 +423,7 @@ Case submission and routing implemented in Screen Flow + Record-Triggered Flow. 
 | Security Lead | TBD | Pending |
 | Integration Lead | TBD | Pending |`,
 
-  "sf-learner": `## Session Learnings — Customer 360 Portal ARB
+  "sf-learner": `## Session Learnings — NovaPeak ARB
 
 **Session ID**: ARB-2024-001 | **Domain**: Salesforce | **Outcome**: APPROVED WITH CONDITIONS
 

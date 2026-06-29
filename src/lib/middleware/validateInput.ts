@@ -1,6 +1,6 @@
 import type { MiddlewareContext, MiddlewareFn } from "@/lib/types";
 
-const MAX_INPUT_LENGTH = 8000;
+const MAX_INPUT_LENGTH = 32000;
 const MIN_INPUT_LENGTH = 10;
 
 export const validateInput: MiddlewareFn = async (ctx, next) => {

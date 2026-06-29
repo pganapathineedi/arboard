@@ -9,12 +9,48 @@ export interface JiraIssueParams {
   humanJudgementPoints?: string[];
   assigneeAccountId?: string;
   endorsementType?: 'countersigned' | 'assigned_for_review';
+  revisionRound?: number;
 }
 
 export interface JiraMember {
   accountId:    string;
   displayName:  string;
   emailAddress: string;
+}
+
+// Recursively extract plain text from an ADF document node
+function extractADFText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const n = node as Record<string, unknown>;
+  if (typeof n.text === 'string') return n.text;
+  if (Array.isArray(n.content)) {
+    return (n.content as unknown[]).map(extractADFText).filter(Boolean).join(' ');
+  }
+  return '';
+}
+
+export async function fetchTicket(ticketId: string): Promise<string | null> {
+  const domain = process.env.JIRA_DOMAIN;
+  const email  = process.env.JIRA_EMAIL;
+  const token  = process.env.JIRA_API_TOKEN;
+
+  if (!domain || !email || !token) return null;
+
+  try {
+    const res = await fetch(
+      `https://${domain}/rest/api/3/issue/${ticketId}?fields=summary,description`,
+      { headers: buildHeaders(email, token) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      fields: { summary: string; description: unknown };
+    };
+    const summary     = data.fields.summary ?? '';
+    const description = extractADFText(data.fields.description);
+    return [summary, description].filter(Boolean).join('\n\n');
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchProjectMembers(): Promise<JiraMember[]> {
@@ -193,6 +229,91 @@ function buildHeaders(email: string, token: string): Record<string, string> {
   };
 }
 
+function formatRevisionDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function verdictToResolutionStatus(verdict: string): 'Resolved' | 'Persists' | 'Escalated' {
+  const v = verdict.toLowerCase();
+  if (v.includes('escalat')) return 'Escalated';
+  if (v.includes('approv') && !v.includes('condition')) return 'Resolved';
+  return 'Persists';
+}
+
+async function searchExistingTicket(
+  requirement: string,
+  projectKey: string,
+  domain: string,
+  email: string,
+  token: string,
+): Promise<string | null> {
+  const summaryPrefix = `[ARBoard ADR] ${requirement.slice(0, 60)}`;
+  const escaped = summaryPrefix.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const jql = encodeURIComponent(`project = "${projectKey}" AND summary ~ "${escaped}" AND labels = "arboard-adr" ORDER BY created DESC`);
+  try {
+    const res = await fetch(
+      `https://${domain}/rest/api/3/search?jql=${jql}&maxResults=1&fields=summary,labels`,
+      { headers: buildHeaders(email, token) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { issues: Array<{ key: string }> };
+    return data.issues?.[0]?.key ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function appendRevisionComment(
+  issueKey: string,
+  revisionRound: number,
+  verdict: string,
+  scribeNotes: string,
+  domain: string,
+  email: string,
+  token: string,
+): Promise<void> {
+  const date = formatRevisionDate(new Date());
+  const resolutionStatus = verdictToResolutionStatus(verdict);
+
+  const commentText = [
+    `--- Revision ${revisionRound} Review (${date}) ---`,
+    `Verdict: ${verdict}`,
+    `Resolution status: ${resolutionStatus}`,
+    `Agent notes: ${scribeNotes.slice(0, 500)}`,
+  ].join('\n');
+
+  await fetch(`https://${domain}/rest/api/3/issue/${issueKey}/comment`, {
+    method: 'POST',
+    headers: buildHeaders(email, token),
+    body: JSON.stringify({
+      body: {
+        version: 1, type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: commentText }] }],
+      },
+    }),
+  }).catch(err => { console.warn('[jira] revision comment POST failed:', err); });
+
+  // Update labels to reflect resolution
+  const getRes = await fetch(`https://${domain}/rest/api/3/issue/${issueKey}`, {
+    headers: buildHeaders(email, token),
+  }).catch(() => null);
+
+  if (getRes?.ok) {
+    const issueData = (await getRes.json()) as { fields: { labels: string[] } };
+    let updated = (issueData.fields.labels ?? []).filter(
+      l => l !== 'arboard-revision' && l !== 'arboard-conditions',
+    );
+    if (resolutionStatus === 'Resolved') {
+      updated = updated.filter(l => l !== 'arboard-approved').concat('arboard-approved', 'arboard-resolved');
+    }
+    await fetch(`https://${domain}/rest/api/3/issue/${issueKey}`, {
+      method: 'PUT',
+      headers: buildHeaders(email, token),
+      body: JSON.stringify({ fields: { labels: updated } }),
+    }).catch(err => { console.warn('[jira] label update after revision failed:', err); });
+  }
+}
+
 export async function createADRIssue(params: JiraIssueParams): Promise<JiraResult | null> {
   const domain = process.env.JIRA_DOMAIN;
   const email = process.env.JIRA_EMAIL;
@@ -212,8 +333,27 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
     return null;
   }
 
+  // On revision runs, check for an existing ticket before creating a duplicate
+  if (params.revisionRound && params.revisionRound >= 1) {
+    const existingKey = await searchExistingTicket(params.requirement, projectKey, domain, email, token);
+    if (existingKey) {
+      console.log('[jira] existing ticket found — appending revision comment', { existingKey, revisionRound: params.revisionRound });
+      await appendRevisionComment(
+        existingKey,
+        params.revisionRound,
+        params.verdict,
+        params.scribeNotes,
+        domain,
+        email,
+        token,
+      );
+      return { issueKey: existingKey, issueUrl: `https://${domain}/browse/${existingKey}` };
+    }
+    console.log('[jira] no existing ticket found for revision run — creating new ticket');
+  }
+
   const url = `https://${domain}/rest/api/3/issue`;
-  const summary = `[ARBoard ADR] ${params.requirement.slice(0, 80)}`;
+  const summary = `[ARBoard ADR] ${params.requirement.slice(0, 80)}`.replace(/[\r\n]+/g, ' ').trim();
   const verdictLabel = verdictToLabel(params.verdict);
 
   const labels = ['arboard-adr', verdictLabel];

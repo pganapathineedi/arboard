@@ -17,6 +17,7 @@ interface EndorseBody {
   scribeNotes:          string;
   mustFixIssues:        string[];
   confidenceLevel?:     string;
+  revisionRound?:       number;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     humanJudgementPoints: body.humanJudgementPoints,
     assigneeAccountId:    body.assigneeAccountId,
     endorsementType:      body.endorsementType,
+    revisionRound:        body.revisionRound,
   }).catch(err => {
     console.error("[endorse] createADRIssue failed:", err);
     return null;

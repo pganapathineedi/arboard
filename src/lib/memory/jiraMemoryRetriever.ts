@@ -121,7 +121,7 @@ export async function retrieveMemory(
         jiraKey: i.key,
         requirement: requirementText,
         verdict,
-        summary: descText.slice(0, 500),
+        summary: descText.slice(0, 2000),
         labels: i.fields.labels ?? [],
         relevanceScore: score,
       });

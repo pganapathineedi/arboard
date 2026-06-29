@@ -35,12 +35,14 @@ interface EndorsementPanelProps {
   verdict:              string;
   scribeNotes:          string;
   mustFixIssues:        string[];
+  revisionRound?:       number;
   onEndorsed: (jiraKey: string, jiraUrl: string) => void;
 }
 
 export function EndorsementPanel({
   sessionId, confidence, humanJudgementPoints,
   requirement, verdict, scribeNotes, mustFixIssues,
+  revisionRound,
   onEndorsed,
 }: EndorsementPanelProps) {
   const [members, setMembers]                 = useState<JiraMember[]>([]);
@@ -95,6 +97,7 @@ export function EndorsementPanel({
           verdict,
           scribeNotes,
           mustFixIssues,
+          revisionRound,
         }),
       });
       const data = await res.json() as { jiraKey?: string; jiraUrl?: string; error?: string };
@@ -120,7 +123,7 @@ export function EndorsementPanel({
         <span style={{ color: "#0fba7a", fontSize: 18 }}>✓</span>
         <div>
           <div style={{ fontFamily: "monospace", fontSize: 13, color: "#0fba7a", fontWeight: 700, marginBottom: 2 }}>
-            Jira ticket created
+            {revisionRound && revisionRound >= 1 ? "Jira ticket updated" : "Jira ticket created"}
           </div>
           <a
             href={jiraUrl}

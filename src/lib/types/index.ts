@@ -129,6 +129,9 @@ export interface ForumRequest {
   revisionRound?: number;   // 1, 2, 3 — which iteration this is
   previousFeedback?: string; // Judge's verdict text from the prior round
   documentContent?: boolean; // true when input came from an uploaded document
+  priorTicket?: string | null; // prior ADR ticket key for re-submissions (e.g. ARBOARD-17)
+  inputMode?: "review" | "greenfield" | "debate";
+  debateFocusAreas?: string;
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────
