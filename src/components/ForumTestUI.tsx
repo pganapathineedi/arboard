@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ImpactAnalysis, UploadResult } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { SalesforceOrgBanner } from "@/components/SalesforceOrgBanner";
@@ -8,6 +8,7 @@ import { OrgHealthPanel } from "@/components/OrgHealthPanel";
 import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
 import { ClientContextBanner } from "@/components/ClientContextBanner";
 import { EndorsementPanel } from "@/components/EndorsementPanel";
+import { MODEL_PRICING } from "@/lib/pricing";
 
 // ── Local Types ───────────────────────────────────────────────────────────────
 
@@ -95,21 +96,22 @@ type ChipStatus = "idle" | "active" | "done" | "warn" | "skipped" | "error";
 
 const MODEL_CONFIG: Record<ModelId, {
   label: string; icon: string;
-  inputPer1K: number; outputPer1K: number; cacheReadPer1K: number; description: string;
+  inputPer1K: number; outputPer1K: number; cacheReadPer1K: number; cacheWritePer1K: number;
+  description: string;
 }> = {
   "claude-haiku-4-5-20251001": {
     label: "claude-haiku-4-5", icon: "⚡",
-    inputPer1K: 0.0008, outputPer1K: 0.004, cacheReadPer1K: 0.00008,
+    ...MODEL_PRICING["claude-haiku-4-5-20251001"],
     description: "Fast · Cost-efficient · Good for most reviews",
   },
   "claude-sonnet-4-6": {
     label: "claude-sonnet-4-6", icon: "🧠",
-    inputPer1K: 0.003, outputPer1K: 0.015, cacheReadPer1K: 0.0003,
+    ...MODEL_PRICING["claude-sonnet-4-6"],
     description: "Balanced · Recommended for complex projects",
   },
   "claude-opus-4-8": {
     label: "claude-opus-4-8", icon: "🚀",
-    inputPer1K: 0.015, outputPer1K: 0.075, cacheReadPer1K: 0.0015,
+    ...MODEL_PRICING["claude-opus-4-8"],
     description: "Maximum depth · Best for high-stakes reviews",
   },
 };
@@ -1770,11 +1772,16 @@ export default function ForumTestUI() {
     ? completedAgents.reduce((s, a) => s + (a.outputTokens ?? 0), 0)
     : agents.reduce((s, a) => s + Math.ceil(a.content.length / 4), 0);
 
-  const actualCost = totalInputTokens / 1000 * MODEL_CONFIG[model].inputPer1K +
-                     totalOutputTokens / 1000 * MODEL_CONFIG[model].outputPer1K;
-
   const totalCacheReadTokens  = completedAgents.reduce((s, a) => s + (a.cacheReadTokens  ?? 0), 0);
   const totalCacheWriteTokens = completedAgents.reduce((s, a) => s + (a.cacheWriteTokens ?? 0), 0);
+
+  const actualCost = (
+    totalInputTokens      * MODEL_CONFIG[model].inputPer1K +
+    totalOutputTokens     * MODEL_CONFIG[model].outputPer1K +
+    totalCacheReadTokens  * MODEL_CONFIG[model].cacheReadPer1K +
+    totalCacheWriteTokens * MODEL_CONFIG[model].cacheWritePer1K
+  ) / 1000;
+
   const cacheSavings = totalCacheReadTokens / 1000 *
     (MODEL_CONFIG[model].inputPer1K - MODEL_CONFIG[model].cacheReadPer1K);
 
@@ -2124,6 +2131,14 @@ export default function ForumTestUI() {
     setPendingEndorsement(null);
     setTokenUsage([]);
     setDissentData(null);
+    setUploadResult(null);
+    setUploading(false);
+    setUploadError(null);
+    setDragging(false);
+    setAppliedCtx(null);
+    setCtxApplied(false);
+    setInput("");
+    setInputMode(null);
   };
 
   const handleCountersign = useCallback(async (name: string, role: string) => {
