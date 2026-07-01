@@ -1,7 +1,9 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { detectFormat, parseDocument } from "@/lib/documents/DocumentParser";
 import { maybeSummarise } from "@/lib/documents/DocumentChunker";
 import { extractMetadata } from "@/lib/documents/DocumentMetadata";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import type { UploadResult, DetectedContext } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -34,6 +36,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  const docHash = createHash("sha256").update(buffer).digest("hex");
+
+  let duplicate: { sessionId: string; jiraTicket: string | null } | null = null;
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const { data } = await supabase
+      .from("sessions")
+      .select("id, jira_issue_key")
+      .eq("doc_hash", docHash)
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      duplicate = { sessionId: data.id as string, jiraTicket: (data.jira_issue_key as string | null) ?? null };
+    }
+  }
 
   try {
     const rawText = await parseDocument(buffer, format);
@@ -62,7 +79,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       format,
     };
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, docHash, duplicate });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     return NextResponse.json({ error: `Could not process document: ${message}` }, { status: 500 });

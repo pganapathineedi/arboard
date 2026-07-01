@@ -22,6 +22,7 @@ export interface SaveADRParams {
   durationSeconds?: number;
   agentCount?: number;
   model?: string | null;
+  docHash?: string;
 }
 
 export interface SavedADR {
@@ -123,6 +124,7 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
       duration_seconds: Math.round(params.durationSeconds ?? 0),
       agent_count: Math.round(params.agentCount ?? 0),
       model: params.model ?? null,
+      doc_hash: params.docHash ?? null,
     }).then(({ error }) => {
       if (error) console.warn('[adr/store] sessions insert failed (non-fatal):', error.message);
     });

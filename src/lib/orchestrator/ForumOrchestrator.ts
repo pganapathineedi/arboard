@@ -501,6 +501,7 @@ ${agentOutputsText}`,
           model:                request.modelOverride ?? null,
           durationSeconds:      (Date.now() - sessionStart) / 1000,
           agentCount:           allAgents.length,
+          docHash:              request.docHash,
         });
       } catch (err) {
         console.error("[orchestrator] saveADR failed:", err instanceof Error ? err.message : err);

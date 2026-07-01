@@ -132,6 +132,7 @@ export interface ForumRequest {
   priorTicket?: string | null; // prior ADR ticket key for re-submissions (e.g. ARBOARD-17)
   inputMode?: "review" | "greenfield" | "debate";
   debateFocusAreas?: string;
+  docHash?: string;
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────

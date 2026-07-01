@@ -1718,6 +1718,8 @@ export default function ForumTestUI() {
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploading, setUploading]       = useState(false);
   const [uploadError, setUploadError]   = useState<string | null>(null);
+  const [docHash, setDocHash]           = useState<string | null>(null);
+  const [dupWarning, setDupWarning]     = useState<{ sessionId: string; jiraTicket: string | null } | null>(null);
   const [dragging, setDragging]         = useState(false);
   const [appliedCtx, setAppliedCtx]     = useState<AppliedCtx | null>(null);
   const [ctxApplied, setCtxApplied]     = useState(false);
@@ -1898,15 +1900,18 @@ export default function ForumTestUI() {
   const handleFileUpload = useCallback(async (file: File) => {
     setUploadError(null); setUploading(true); setUploadResult(null);
     setAppliedCtx(null);  setCtxApplied(false);
+    setDocHash(null); setDupWarning(null);
     const form = new FormData();
     form.append("file", file);
     try {
       const res  = await fetch("/api/upload", { method: "POST", body: form });
-      const json = (await res.json()) as UploadResult & { error?: string };
+      const json = (await res.json()) as UploadResult & { error?: string; docHash?: string; duplicate?: { sessionId: string; jiraTicket: string | null } | null };
       if (!res.ok || !json.extractedText) { setUploadError(json.error ?? "Upload failed"); return; }
       setInput("");
       setUploadResult(json);
       setInput(json.extractedText);
+      if (json.docHash) setDocHash(json.docHash);
+      if (json.duplicate) setDupWarning(json.duplicate);
     } catch { setUploadError("Upload failed — network error"); }
     finally {
       setUploading(false);
@@ -1923,6 +1928,7 @@ export default function ForumTestUI() {
   const clearDocument = () => {
     setUploadResult(null); setAppliedCtx(null);
     setCtxApplied(false);  setUploadError(null); setInput("");
+    setDocHash(null); setDupWarning(null);
   };
 
   // ── SSE ─────────────────────────────────────────────────────────────────────
@@ -2066,6 +2072,7 @@ export default function ForumTestUI() {
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
           mode: apiMode,
           documentContent: !!uploadResult,
+          docHash: docHash ?? undefined,
           priorTicket: priorTicket.trim() || null,
           inputMode: inputMode ?? "review",
           debateFocusAreas: debateFocusAreas.trim() || null,
@@ -2135,6 +2142,8 @@ export default function ForumTestUI() {
     setUploadResult(null);
     setUploading(false);
     setUploadError(null);
+    setDocHash(null);
+    setDupWarning(null);
     setDragging(false);
     setAppliedCtx(null);
     setCtxApplied(false);
@@ -2640,6 +2649,27 @@ export default function ForumTestUI() {
         )}
 
         {/* ══ AGENT SELECTION PHASE ════════════════════════════════════════════ */}
+        {selectionMode && !showSessionView && analysis && dupWarning?.jiraTicket && (
+          <div style={{
+            display: "flex", alignItems: "flex-start", gap: 12,
+            padding: "12px 16px", marginBottom: 16, borderRadius: 8,
+            background: "rgba(240,160,32,0.08)", border: "1px solid rgba(240,160,32,0.35)",
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>⚠</span>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#f0a020" }}>
+                This document was previously reviewed — {dupWarning.jiraTicket}. Enter the ticket number below to run as a revision instead.
+              </span>
+            </div>
+            <button
+              onClick={() => setDupWarning(null)}
+              style={{ background: "none", border: "none", color: "#7B8DB0", cursor: "pointer", fontSize: 14, flexShrink: 0 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {selectionMode && !showSessionView && analysis && (
           <AgentSelectorPanel
             analysis={analysis}
