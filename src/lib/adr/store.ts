@@ -21,6 +21,7 @@ export interface SaveADRParams {
   estimatedCostUsd?: number;
   durationSeconds?: number;
   agentCount?: number;
+  model?: string | null;
 }
 
 export interface SavedADR {
@@ -117,9 +118,11 @@ export async function saveADR(params: SaveADRParams): Promise<SavedADR> {
       output_tokens: Math.round(params.totalOutputTokens ?? 0),
       cache_read_tokens: Math.round(params.totalCacheReadTokens ?? 0),
       cache_write_tokens: Math.round(params.totalCacheWriteTokens ?? 0),
+      total_tokens: Math.round((params.totalInputTokens ?? 0) + (params.totalOutputTokens ?? 0) + (params.totalCacheWriteTokens ?? 0)),
       estimated_cost_usd: params.estimatedCostUsd ?? 0,
       duration_seconds: Math.round(params.durationSeconds ?? 0),
       agent_count: Math.round(params.agentCount ?? 0),
+      model: params.model ?? null,
     }).then(({ error }) => {
       if (error) console.warn('[adr/store] sessions insert failed (non-fatal):', error.message);
     });

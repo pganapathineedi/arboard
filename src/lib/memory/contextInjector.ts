@@ -26,6 +26,41 @@ function buildMemoryBlock(adrs: MemoryContext['relevantADRs']): string {
   return lines.join('\n').trim();
 }
 
+const LEARNING_TYPE_LABELS: Record<string, string> = {
+  confirmed_pattern: 'Confirmed Patterns',
+  anti_pattern: 'Anti-Patterns',
+  org_context: 'Org Context',
+};
+
+export function buildOrgLearningsBlock(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return '';
+
+  const grouped: Record<string, string[]> = {};
+  for (const row of rows) {
+    const type = typeof row.learning_type === 'string' ? row.learning_type : 'org_context';
+    const content = typeof row.content === 'string' ? row.content : '';
+    if (!content) continue;
+    (grouped[type] ??= []).push(content);
+  }
+
+  const sections: string[] = [
+    "ORG INTELLIGENCE — accumulated from past sessions",
+    '',
+  ];
+
+  for (const type of ['confirmed_pattern', 'anti_pattern', 'org_context']) {
+    const entries = grouped[type];
+    if (!entries?.length) continue;
+    sections.push(`**${LEARNING_TYPE_LABELS[type]}**`);
+    for (const entry of entries) {
+      sections.push(`- ${entry}`);
+    }
+    sections.push('');
+  }
+
+  return sections.join('\n').trim();
+}
+
 // All known Salesforce domain agent IDs
 const SF_AGENT_IDS = [
   'sf-designer', 'sf-apex', 'sf-lwc', 'sf-integration',

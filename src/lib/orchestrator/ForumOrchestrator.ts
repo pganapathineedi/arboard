@@ -7,15 +7,20 @@ import { AgentRunner } from "@/lib/agents/AgentRunner";
 import type { UsageData } from "@/lib/agents/AgentRunner";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
 import { saveADR } from "@/lib/adr/store";
+import { estimateCostUsd } from "@/lib/pricing";
 import { retrieveMemory, buildAllAgentMemoryBlocks } from "@/lib/memory";
+import { persistLearnerOutput } from "@/lib/memory/learnerPersist";
 import { fetchTicket } from "@/lib/integrations/jira";
+import { retrieveOrgLearnings } from "@/lib/memory/orgLearningsRetriever";
+import { buildOrgLearningsBlock } from "@/lib/memory/contextInjector";
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 
 function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBlock?: string | null, priorADRBlock?: string | null): AgentConfig {
   const overrides: Partial<AgentConfig> = {};
-  if (request.modelOverride) overrides.model = request.modelOverride;
+  const HAIKU_ONLY = new Set(["sf-scribe", "sf-learner"]);
+  if (request.modelOverride && !HAIKU_ONLY.has(agent.id)) overrides.model = request.modelOverride;
   if (request.orgContextStr) overrides.orgContext = request.orgContextStr;
   const combined = [memoryBlock, priorADRBlock].filter(Boolean).join('\n\n');
   if (combined) overrides.memoryBlock = combined;
@@ -153,11 +158,6 @@ function parseHumanJudgementPoints(content: string): string[] {
     .filter(l => Boolean(l) && !/^none identified$/i.test(l) && !/^none$/i.test(l));
 }
 
-// Haiku 4.5 pricing: $1.00 input / $5.00 output / $0.10 cache read / $1.25 cache write (per MTok)
-function estimateCostUsd(input: number, output: number, cacheRead: number, cacheWrite: number): number {
-  return input * 1e-6 + output * 5e-6 + cacheRead * 1e-7 + cacheWrite * 1.25e-6;
-}
-
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 export class ForumOrchestrator {
@@ -185,6 +185,19 @@ export class ForumOrchestrator {
     const memoryBlocks = buildAllAgentMemoryBlocks(memory);
     if (memory.relevantADRs.length > 0) {
       console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
+    }
+
+    // ── Org learnings injection ───────────────────────────────────────────────
+    const orgLearningRows = await retrieveOrgLearnings(domainId);
+    const orgLearningsBlock = buildOrgLearningsBlock(orgLearningRows);
+    console.log(`[org-learnings] retrieved ${orgLearningRows.length} rows for domain ${domainId}`);
+    if (orgLearningsBlock) {
+      for (const agent of domain.agents) {
+        memoryBlocks[agent.id] = memoryBlocks[agent.id]
+          ? memoryBlocks[agent.id] + '\n\n' + orgLearningsBlock
+          : orgLearningsBlock;
+      }
+      console.log(`[forum] Injected org learnings block (${orgLearningRows.length} rows) for domain ${domainId}`);
     }
 
     // ── Prior ADR injection ───────────────────────────────────────────────────
@@ -278,7 +291,7 @@ export class ForumOrchestrator {
             totalCacheReadTokens += designerUsage.cacheReadTokens ?? 0;
             totalCacheWriteTokens += designerUsage.cacheWriteTokens ?? 0;
           }
-          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens, outputTokens: designerUsage?.outputTokens, cacheReadTokens: designerUsage?.cacheReadTokens, cacheWriteTokens: designerUsage?.cacheWriteTokens })}\n\n`;
+          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, durationMs: Date.now() - designerStart, inputTokens: designerUsage?.inputTokens ?? Math.floor(request.input.length / 4), outputTokens: designerUsage?.outputTokens ?? Math.floor(designerOutput.length / 4), cacheReadTokens: designerUsage?.cacheReadTokens ?? 0, cacheWriteTokens: designerUsage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: designer.name, inputTokens: (designerUsage?.inputTokens ?? 0) > 0 ? designerUsage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (designerUsage?.outputTokens ?? 0) > 0 ? designerUsage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -323,7 +336,7 @@ export class ForumOrchestrator {
             totalCacheReadTokens += usage.cacheReadTokens ?? 0;
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
-          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(reviewInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(content.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
           specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
         } catch (err) {
@@ -371,7 +384,7 @@ export class ForumOrchestrator {
             totalCacheReadTokens += usage.cacheReadTokens ?? 0;
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
-          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+          yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(agentInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(agentContent.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -380,8 +393,13 @@ export class ForumOrchestrator {
       }
 
       // ── Save session record (no Jira — gated by EndorsementPanel) ────────
-      const judgeContent  = closingOutputs["sf-judge"]  ?? "";
-      const scribeContent = closingOutputs["sf-scribe"] ?? "";
+      const judgeContent   = closingOutputs["sf-judge"]   ?? "";
+      const scribeContent  = closingOutputs["sf-scribe"]  ?? "";
+      const learnerContent = closingOutputs["sf-learner"] ?? "";
+
+      if (learnerContent) {
+        void persistLearnerOutput(sessionId, domainId, learnerContent);
+      }
 
       const parsedVerdict              = parseVerdictForADR(judgeContent);
       const parsedMustFix              = parseMustFixForADR(judgeContent);
@@ -449,7 +467,12 @@ ${agentOutputsText}`,
 
             const rawText = response.content[0]?.type === "text" ? response.content[0].text : "{}";
             const raw = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-            dissentPayload = JSON.parse(raw);
+            try {
+              dissentPayload = JSON.parse(raw);
+            } catch (parseErr) {
+              console.error("[orchestrator] Dissent JSON parse failed. Raw response:", rawText);
+              throw parseErr;
+            }
           }
 
           console.log("[orchestrator] dissent_analysis payload:", JSON.stringify(dissentPayload).slice(0, 300));
@@ -474,7 +497,8 @@ ${agentOutputsText}`,
           totalOutputTokens,
           totalCacheReadTokens,
           totalCacheWriteTokens,
-          estimatedCostUsd:     estimateCostUsd(totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheWriteTokens),
+          estimatedCostUsd:     estimateCostUsd(totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheWriteTokens, request.modelOverride),
+          model:                request.modelOverride ?? null,
           durationSeconds:      (Date.now() - sessionStart) / 1000,
           agentCount:           allAgents.length,
         });
@@ -513,18 +537,20 @@ ${agentOutputsText}`,
 
     yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
+    let content = "";
     let usage: UsageData | undefined;
     const agentStart = Date.now();
 
     try {
       for await (const chunk of AgentRunner.runStream(effectiveAgent, request.input, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
         if (typeof chunk === "string") {
+          content += chunk;
           yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
         } else {
           usage = chunk.__usage;
         }
       }
-      yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, cacheReadTokens: usage?.cacheReadTokens, cacheWriteTokens: usage?.cacheWriteTokens })}\n\n`;
+      yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(request.input.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(content.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
       yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

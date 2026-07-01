@@ -9,6 +9,7 @@ import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
 import { ClientContextBanner } from "@/components/ClientContextBanner";
 import { EndorsementPanel } from "@/components/EndorsementPanel";
 import { MODEL_PRICING } from "@/lib/pricing";
+import { CostMonitor } from "@/components/CostMonitor";
 
 // ── Local Types ───────────────────────────────────────────────────────────────
 
@@ -186,7 +187,7 @@ function formatCost(usd: number): string {
 }
 
 function estimateSession(inputText: string, agentCount: number, modelId: ModelId) {
-  const reqTokens   = Math.ceil(inputText.length / 4);
+  const reqTokens   = Math.ceil(inputText.length / 4 * 0.73);
   const sysTokens   = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
   const inputPerAgent  = reqTokens + sysTokens;
   const outputPerAgent = 600;
@@ -564,7 +565,7 @@ function AgentSelectorPanel({
               }}
             >
               <div style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: meta?.color ?? "#F0F4FF", marginBottom: 8, letterSpacing: "0.02em" }}>
-                {a.agentName}
+                {a.agentName ?? meta?.badge ?? a.agentId}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>{meta?.icon ?? "🤖"}</span>
@@ -2741,6 +2742,17 @@ export default function ForumTestUI() {
                   {/* Endorsement Panel */}
                   {sessionComplete && pendingEndorsement && (
                     <>
+                      <div style={{ marginBottom: 12 }}>
+                        <button
+                          onClick={handleDownloadReport}
+                          style={{
+                            padding: "8px 18px", background: "#00c8f0", color: "#07090f",
+                            fontWeight: 700, fontSize: 12, borderRadius: 6, cursor: "pointer", border: "none",
+                          }}
+                        >
+                          ⬇ Download Report
+                        </button>
+                      </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 16px" }}>
                         <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
                         <span style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: 1.2, color: "#7B8DB0", textTransform: "uppercase" }}>
@@ -2884,6 +2896,28 @@ export default function ForumTestUI() {
                     </div>
                   </>
                 )}
+                {completedAgents.filter(a => !a.skipped).length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "14px 0" }} />
+                    <div style={{ ...S.label, marginBottom: 8 }}>Per-Agent</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      {completedAgents.filter(a => !a.skipped).map(a => {
+                        const meta = AGENT_META[a.agentId];
+                        const tokens = a.outputTokens ?? Math.ceil(a.content.length / 4);
+                        return (
+                          <div key={a.agentId} style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF" }}>
+                              {meta?.shortName ?? a.agentName}
+                            </span>
+                            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7B8DB0" }}>
+                              ~{(tokens / 1000).toFixed(1)}k tok
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>
@@ -2913,18 +2947,8 @@ export default function ForumTestUI() {
         />
       )}
 
-      {/* ══ TOKEN COST PILL ══════════════════════════════════════════════════ */}
-      {tokenUsage.length > 0 && (() => {
-        const totalIn  = tokenUsage.reduce((s, t) => s + t.input,  0);
-        const totalOut = tokenUsage.reduce((s, t) => s + t.output, 0);
-        const cost = (totalIn / 1_000_000 * 3) + (totalOut / 1_000_000 * 15);
-        return (
-          <div style={{ position: "fixed", bottom: "1rem", right: "1rem", background: "#1a1a2e", border: "1px solid #333", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#ccc", zIndex: 1000, cursor: "pointer" }}>
-            <span style={{ color: "#4ade80", fontWeight: 600 }}>💰 ${cost.toFixed(4)}</span>
-            <span style={{ marginLeft: "8px", opacity: 0.6 }}>{(totalIn + totalOut).toLocaleString()} tokens</span>
-          </div>
-        );
-      })()}
+      {/* ══ LIVE COST MONITOR ════════════════════════════════════════════════ */}
+      <CostMonitor agents={agents} model={model} isRunning={running} />
     </div>
   );
 }

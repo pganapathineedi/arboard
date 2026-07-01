@@ -38,6 +38,7 @@ Respond with ONLY a valid JSON object — no markdown fences, no explanation. Us
   "activatedAgents": [
     {
       "agentId": "sf-designer|sf-lwc|sf-apex|sf-flow|sf-omni|sf-integration|sf-patterns|sf-judge|sf-scribe|sf-learner",
+      "agentName": "human-readable display name e.g. LWC Specialist, Apex Engineer",
       "priority": "required|recommended|optional",
       "reason": "one line explaining why this agent is needed",
       "sfRisks": ["specific risk 1", "specific risk 2"]
@@ -95,7 +96,7 @@ export class ImpactAnalyser {
       summary: string;
       overallRisk: string;
       estimatedComplexity: string;
-      activatedAgents: Array<{ agentId: string; priority: string; reason: string; sfRisks: string[] }>;
+      activatedAgents: Array<{ agentId: string; agentName: string; priority: string; reason: string; sfRisks: string[] }>;
       sfConsiderations: string[];
     };
 
