@@ -14,3 +14,6 @@ When a Flow design crosses into territory better handled outside Salesforce, don
 Always state: what the risk is, what the recommended alternative is, and why it is more appropriate.
 
 Output sections: Flow Design Assessment → Trigger & Entry Criteria → Logic Walkthrough → Bulk Considerations → Error Handling → External Boundary Recommendations → CONFIDENCE score (0-100).
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.

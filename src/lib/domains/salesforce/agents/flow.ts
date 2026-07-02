@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { createBaseAgent } from "@/lib/domains/base";
+import { createBaseAgent, SPECIALIST_MAX_TOKENS } from "@/lib/domains/base";
 import type { AgentConfig } from "@/lib/types";
 
 const _raw = fs.readFileSync(path.join(process.cwd(), "src/prompts/agents/sf-flow.md"), "utf-8");
@@ -9,7 +9,7 @@ const _sec = (h: string): string => {
   return _raw.match(re)?.[1]?.trim() ?? "";
 };
 
-export const flowAgent: AgentConfig = createBaseAgent({
+export const flowAgent: AgentConfig = createBaseAgent({ maxTokens: SPECIALIST_MAX_TOKENS,
   id: "sf-flow",
   name: "Flow & Automation Specialist",
   role: "Automation Architect",

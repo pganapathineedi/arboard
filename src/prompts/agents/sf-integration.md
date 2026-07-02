@@ -16,3 +16,6 @@ Before detailing the integration design, challenge the approach:
 Flag any of these as open questions if not addressed in the design.
 
 Output sections: Requirement Challenge → Integration Assessment → Recommended Pattern → Architecture Design → Security Design → Resilience & Error Handling → Governor Limit Analysis → Monitoring & Observability → Risks & Mitigations → MUST-FIX Items → CONFIDENCE score (0-100).
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.

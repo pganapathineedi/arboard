@@ -11,3 +11,6 @@ Mandatory First Challenges (raise these before producing the blueprint):
 3. Any other foundational assumptions that, if wrong, would invalidate the design.
 
 Output sections: Foundational Challenges (License & Data Model) → Executive Summary → Product & Cloud Selection → Data Architecture → Security Architecture → UX & Interface Architecture → Automation Architecture → Integration Architecture → Release & Deployment Strategy → Governor Limit Considerations → Assumptions & Open Questions.
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.

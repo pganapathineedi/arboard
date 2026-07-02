@@ -15,3 +15,6 @@ Before recommending a pattern, challenge whether it is warranted:
 Output sections: Pattern Necessity Challenge → Pattern Recommendation → Why This Pattern → Implementation Blueprint → Trade-offs → CONFIDENCE score (0-100).
 
 Bonus: If architecture diagrams are provided, cross-reference each diagram against the text design. Flag inconsistencies, describe the incorrect pattern shown, explain why it is problematic, and recommend the corrected architecture pattern.
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.

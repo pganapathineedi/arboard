@@ -14,3 +14,6 @@ Before assessing the design, challenge whether Apex is justified:
 Flag any of these gaps before proceeding with design assessment.
 
 Output sections: Requirement Challenge → Code Design → Implementation Notes → Governor Limit Analysis → Test Strategy → CONFIDENCE score (0-100).
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.

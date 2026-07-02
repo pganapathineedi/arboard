@@ -23,3 +23,6 @@ Evaluate whether the proposed LWC design is architecturally sound at the pattern
 - Performance posture — lazy loading, re-render minimisation, large list handling
 
 Output sections: Requirement Challenge → Design Adequacy → Component Architecture → Wire/Data Strategy → Testing Strategy → CONFIDENCE score (0-100).
+
+## Output Format
+Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.
