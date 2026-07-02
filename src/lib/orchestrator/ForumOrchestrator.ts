@@ -321,8 +321,10 @@ export class ForumOrchestrator {
         let usage: UsageData | undefined;
         const agentStart = Date.now();
 
+        const specialistMeta: Record<string, unknown> = { documentContent: request.documentContent };
+        if (agent.id === "sf-patterns" && request.embeddedImages?.length) specialistMeta.embeddedImages = request.embeddedImages;
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, specialistMeta, mode)) {
             if (typeof chunk === "string") {
               content += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;
@@ -368,8 +370,10 @@ export class ForumOrchestrator {
         let usage: UsageData | undefined;
         const agentStart = Date.now();
 
+        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent };
+        if (agent.id === "sf-judge" && request.embeddedImages?.length) closingMeta.embeddedImages = request.embeddedImages;
         try {
-          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, { documentContent: request.documentContent }, mode)) {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, closingMeta, mode)) {
             if (typeof chunk === "string") {
               agentContent += chunk;
               yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token: chunk })}\n\n`;

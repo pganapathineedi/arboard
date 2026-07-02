@@ -1,0 +1,155 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .wrap { padding: 1.5rem 0 2rem; max-width: 680px; }
+  .hero { border-left: 3px solid #185FA5; padding-left: 1rem; margin-bottom: 1.75rem; }
+  .hero-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 6px; }
+  .hero-title { font-size: 26px; font-weight: 500; color: var(--color-text-primary); line-height: 1.2; margin-bottom: 8px; }
+  .hero-sub { font-size: 14px; color: var(--color-text-secondary); line-height: 1.6; max-width: 560px; }
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .feat { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 14px 16px; }
+  .feat-icon { font-size: 18px; color: #185FA5; margin-bottom: 8px; }
+  .feat-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+  .feat-body { font-size: 12px; color: var(--color-text-secondary); line-height: 1.55; }
+  .flow { display: flex; align-items: flex-start; gap: 0; margin-bottom: 1.5rem; overflow-x: auto; }
+  .step { flex: 1; min-width: 90px; }
+  .step-inner { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-right: 0; }
+  .step-num { font-size: 10px; font-weight: 500; color: #185FA5; margin-bottom: 4px; }
+  .step-name { font-size: 12px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 2px; }
+  .step-desc { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; }
+  .arrow { display: flex; align-items: center; padding: 0 4px; padding-top: 18px; color: var(--color-text-tertiary); font-size: 14px; flex-shrink: 0; }
+  .agents { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.5rem; }
+  .agent-pill { font-size: 12px; padding: 4px 12px; border-radius: 20px; background: var(--color-background-secondary); border: 0.5px solid var(--color-border-secondary); color: var(--color-text-secondary); display: flex; align-items: center; gap: 5px; }
+  .agent-pill.always { border-color: #185FA5; color: #185FA5; background: #E6F1FB; }
+  .usecases { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.5rem; }
+  .uc { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 14px; font-size: 13px; color: var(--color-text-secondary); display: flex; gap: 8px; align-items: flex-start; }
+  .uc i { color: #3B6D11; margin-top: 1px; flex-shrink: 0; }
+  .footer-bar { border-top: 0.5px solid var(--color-border-tertiary); padding-top: 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: var(--border-radius-md); }
+  .badge-blue { background: #E6F1FB; color: #0C447C; }
+  .badge-green { background: #EAF3DE; color: #27500A; }
+  .badge-purple { background: #EEEDFE; color: #3C3489; }
+  .divider { border: none; border-top: 0.5px solid var(--color-border-tertiary); margin: 1.5rem 0; }
+  @media (max-width: 480px) { .usecases { grid-template-columns: 1fr; } }
+</style>
+
+<h2 class="sr-only">ARBoard — AI-powered Salesforce Architecture Review Board — product one-pager</h2>
+
+<div class="wrap">
+
+  <div class="hero">
+    <p class="hero-eyebrow">Product overview</p>
+    <h1 class="hero-title">ARBoard — AI Architecture Review Board</h1>
+    <p class="hero-sub">A multi-agent AI platform that runs expert Salesforce architecture forums automatically. Upload a requirement or design, and a panel of 9 specialist AI agents debates, reviews, and delivers a binding verdict — in minutes, not weeks.</p>
+  </div>
+
+  <p class="section-label">Key features</p>
+  <div class="features">
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-zoom-code" aria-hidden="true"></i></div>
+      <div class="feat-title">Impact analysis</div>
+      <div class="feat-body">Analyses each requirement and maps it to the right specialist agents before a single token is spent on review. Shows exactly why each agent is triggered.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-robot" aria-hidden="true"></i></div>
+      <div class="feat-title">9 specialist AI agents</div>
+      <div class="feat-body">Designer, LWC, OmniStudio, Flow, Apex, Patterns, Integration, Data, and Judge — each with expert-level Salesforce domain prompts across 5 editable sections.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-file-upload" aria-hidden="true"></i></div>
+      <div class="feat-title">Document upload</div>
+      <div class="feat-body">Upload PDF, DOCX, TXT, MD, or Confluence HTML. ARBoard auto-extracts content, detects Salesforce clouds, compliance terms, and integration patterns.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-coin" aria-hidden="true"></i></div>
+      <div class="feat-title">Token and cost estimator</div>
+      <div class="feat-body">Before each session: estimated tokens, cost range ±20%, and per-agent breakdown. After: actual vs estimated with accuracy score. Full AI spend transparency.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-gavel" aria-hidden="true"></i></div>
+      <div class="feat-title">Judge verdict + ADR</div>
+      <div class="feat-body">Binding verdict: Approved, Conditions, or Revision Required. Numbered must-fix issues. Scribe agent produces a formal Architecture Decision Record with sign-off table.</div>
+    </div>
+    <div class="feat">
+      <div class="feat-icon"><i class="ti ti-brain" aria-hidden="true"></i></div>
+      <div class="feat-title">Learning loop</div>
+      <div class="feat-body">A Learner agent extracts lessons after every session. Knowledge compounds across projects — agents improve with each review run.</div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <p class="section-label">How it works</p>
+  <div class="flow">
+    <div class="step">
+      <div class="step-inner">
+        <div class="step-num">01</div>
+        <div class="step-name">Input requirement</div>
+        <div class="step-desc">Paste text or upload a document</div>
+      </div>
+    </div>
+    <div class="arrow"><i class="ti ti-arrow-right" aria-hidden="true"></i></div>
+    <div class="step">
+      <div class="step-inner">
+        <div class="step-num">02</div>
+        <div class="step-name">Impact analysis</div>
+        <div class="step-desc">AI selects relevant agents and estimates cost</div>
+      </div>
+    </div>
+    <div class="arrow"><i class="ti ti-arrow-right" aria-hidden="true"></i></div>
+    <div class="step">
+      <div class="step-inner">
+        <div class="step-num">03</div>
+        <div class="step-name">Forum runs</div>
+        <div class="step-desc">Agents debate and review in sequence</div>
+      </div>
+    </div>
+    <div class="arrow"><i class="ti ti-arrow-right" aria-hidden="true"></i></div>
+    <div class="step">
+      <div class="step-inner">
+        <div class="step-num">04</div>
+        <div class="step-name">Verdict + ADR</div>
+        <div class="step-desc">Binding decision with numbered actions</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <p class="section-label">Agent panel</p>
+  <div class="agents">
+    <div class="agent-pill always"><i class="ti ti-pencil" aria-hidden="true"></i> Designer</div>
+    <div class="agent-pill"><i class="ti ti-code" aria-hidden="true"></i> LWC</div>
+    <div class="agent-pill"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> OmniStudio</div>
+    <div class="agent-pill"><i class="ti ti-arrow-merge" aria-hidden="true"></i> Flow</div>
+    <div class="agent-pill"><i class="ti ti-brackets" aria-hidden="true"></i> Apex</div>
+    <div class="agent-pill"><i class="ti ti-topology-star" aria-hidden="true"></i> Patterns</div>
+    <div class="agent-pill"><i class="ti ti-plug" aria-hidden="true"></i> Integration</div>
+    <div class="agent-pill"><i class="ti ti-database" aria-hidden="true"></i> Data</div>
+    <div class="agent-pill always"><i class="ti ti-gavel" aria-hidden="true"></i> Judge</div>
+  </div>
+  <p style="font-size:11px; color: var(--color-text-tertiary); margin-bottom: 1.5rem;">Designer and Judge run on every session. All others are triggered based on requirement context.</p>
+
+  <hr class="divider">
+
+  <p class="section-label">Where ARBoard fits in an RFP</p>
+  <div class="usecases">
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Reduces architecture review cycle from weeks to minutes</span></div>
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Provides consistent, documented design governance</span></div>
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Embeds AI into Salesforce SDLC from discovery through delivery</span></div>
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Produces audit-ready Architecture Decision Records automatically</span></div>
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Scales across projects — knowledge compounds over time</span></div>
+    <div class="uc"><i class="ti ti-check" aria-hidden="true"></i><span>Supports complex multi-cloud, regulated enterprise environments</span></div>
+  </div>
+
+  <div class="footer-bar">
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <span class="badge badge-blue">Salesforce native</span>
+      <span class="badge badge-green">Multi-agent AI</span>
+      <span class="badge badge-purple">Enterprise-ready</span>
+    </div>
+    <span style="font-size: 12px; color: var(--color-text-tertiary);">Built on Claude · Anthropic API</span>
+  </div>
+
+</div>

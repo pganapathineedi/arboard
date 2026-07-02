@@ -55,12 +55,24 @@ export class AgentRunner {
 
     const finalCtx = await defaultPipeline(middlewareCtx, async () => middlewareCtx);
 
+    const visionImages = finalCtx.metadata.embeddedImages as Array<{ name: string; mediaType: string; base64: string }> | undefined;
+    const userContent: Anthropic.MessageParam["content"] = visionImages?.length
+      ? [
+          ...visionImages.map(img => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mediaType as Anthropic.Base64ImageSource["media_type"], data: img.base64 },
+          })),
+          { type: "text" as const, text: "The above are architecture diagrams embedded in the submitted design document. Review them for correctness and flag any inconsistencies with the text design." },
+          { type: "text" as const, text: finalCtx.input },
+        ]
+      : finalCtx.input;
+
     const stream = anthropic.messages.stream({
       model: agent.model,
       max_tokens: agent.maxTokens,
       temperature: agent.temperature ?? 0.3,
       system: [{ type: "text", text: finalCtx.systemPrompt, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: finalCtx.input }],
+      messages: [{ role: "user", content: userContent }],
     });
 
     let inputTokens = 0;

@@ -186,12 +186,13 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(3)}`;
 }
 
-function estimateSession(inputText: string, agentCount: number, modelId: ModelId) {
+function estimateSession(inputText: string, agentCount: number, modelId: ModelId, imageCount = 0) {
   const reqTokens   = Math.ceil(inputText.length / 4 * 0.73);
   const sysTokens   = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
   const inputPerAgent  = reqTokens + sysTokens;
   const outputPerAgent = 600;
-  const totalInput  = inputPerAgent * agentCount;
+  const imageTokens = imageCount * 1600 * Math.min(2, agentCount); // sf-patterns and sf-judge receive images
+  const totalInput  = inputPerAgent * agentCount + imageTokens;
   const totalOutput = outputPerAgent * agentCount;
   const totalTokens = totalInput + totalOutput;
   const cfg  = MODEL_CONFIG[modelId];
@@ -206,8 +207,8 @@ function estimateSession(inputText: string, agentCount: number, modelId: ModelId
 }
 
 function parseConfidence(content: string): number | null {
-  const m = content.match(/CONFIDENCE[:\s]+(\d+)\s*\/\s*10/i);
-  return m ? Math.min(10, Math.max(1, parseInt(m[1]))) : null;
+  const m = content.match(/CONFIDENCE:\s*(\d+)\/100/i);
+  return m ? Math.min(100, Math.max(0, parseInt(m[1]))) : null;
 }
 
 function parseVerdict(content: string): "approved" | "conditional" | "revision" | null {
@@ -272,7 +273,7 @@ function getAgentStatus(
     if (a.skipped)  return "skipped";
     if (!a.complete) return "active";
     const conf = parseConfidence(a.content);
-    return conf !== null && conf < 5 ? "warn" : "done";
+    return conf !== null && conf < 50 ? "warn" : "done";
   }
   if (analysisComplete && activeAgentIds.size > 0 && !activeAgentIds.has(agentId)) return "skipped";
   return "idle";
@@ -320,19 +321,19 @@ function Chip({ label, color = "#7B8DB0" }: { label: string; color?: string }) {
 }
 
 function ConfidenceBar({ value, size = "md" }: { value: number; size?: "sm" | "md" }) {
-  const color = value >= 8 ? "#0fba7a" : value >= 5 ? "#f0a020" : "#e84040";
+  const color = value >= 80 ? "#0fba7a" : value >= 50 ? "#f0a020" : "#e84040";
   const h = size === "sm" ? 3 : 4;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{ flex: 1, height: h, background: "rgba(255,255,255,0.06)", borderRadius: h }}>
         <div style={{
-          height: "100%", width: `${value * 10}%`,
+          height: "100%", width: `${value}%`,
           background: color, borderRadius: h,
           transition: "width 0.6s ease",
         }} />
       </div>
       <span style={{ fontFamily: "monospace", fontSize: 10, color, minWidth: 28 }}>
-        {value}/10
+        {value}/100
       </span>
     </div>
   );
@@ -1091,7 +1092,7 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
   const borderColor = agent.error
     ? "#e84040"
     : agent.complete
-      ? conf !== null && conf < 5 ? "#f0a020" : "#0fba7a"
+      ? conf !== null && conf < 50 ? "#f0a020" : "#0fba7a"
       : "#00c8f0";
 
   return (
@@ -1122,6 +1123,16 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
               background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}33`,
             }}>
               {meta.badge}
+            </span>
+          )}
+          {conf !== null && (
+            <span style={{
+              fontFamily: "monospace", fontSize: 9, padding: "2px 7px", borderRadius: 4,
+              background: conf >= 80 ? "rgba(15,186,122,0.12)" : conf >= 50 ? "rgba(240,160,32,0.12)" : "rgba(232,64,64,0.12)",
+              color: conf >= 80 ? "#0fba7a" : conf >= 50 ? "#f0a020" : "#e84040",
+              border: `1px solid ${conf >= 80 ? "rgba(15,186,122,0.3)" : conf >= 50 ? "rgba(240,160,32,0.3)" : "rgba(232,64,64,0.3)"}`,
+            }}>
+              {conf}/100
             </span>
           )}
         </div>
@@ -1719,6 +1730,7 @@ export default function ForumTestUI() {
   const [uploading, setUploading]       = useState(false);
   const [uploadError, setUploadError]   = useState<string | null>(null);
   const [docHash, setDocHash]           = useState<string | null>(null);
+  const [embeddedImages, setEmbeddedImages] = useState<{ name: string; mediaType: string; base64: string }[]>([]);
   const [dupWarning, setDupWarning]     = useState<{ sessionId: string; jiraTicket: string | null } | null>(null);
   const [dragging, setDragging]         = useState(false);
   const [appliedCtx, setAppliedCtx]     = useState<AppliedCtx | null>(null);
@@ -1759,8 +1771,8 @@ export default function ForumTestUI() {
     ? selectedAgentIds.size
     : analysis ? (analysis.activatedAgents?.length ?? 7) : 7;
   const estimate   = useMemo(
-    () => estimateSession(input, agentCount, model),
-    [input, agentCount, model]
+    () => estimateSession(input, agentCount, model, embeddedImages.length),
+    [input, agentCount, model, embeddedImages.length]
   );
 
   const totalActualMs = sessionEndTime && sessionStartTime ? sessionEndTime - sessionStartTime : null;
@@ -1905,13 +1917,14 @@ export default function ForumTestUI() {
     form.append("file", file);
     try {
       const res  = await fetch("/api/upload", { method: "POST", body: form });
-      const json = (await res.json()) as UploadResult & { error?: string; docHash?: string; duplicate?: { sessionId: string; jiraTicket: string | null } | null };
+      const json = (await res.json()) as UploadResult & { error?: string; docHash?: string; duplicate?: { sessionId: string; jiraTicket: string | null } | null; embeddedImages?: { name: string; mediaType: string; base64: string }[] };
       if (!res.ok || !json.extractedText) { setUploadError(json.error ?? "Upload failed"); return; }
       setInput("");
       setUploadResult(json);
       setInput(json.extractedText);
       if (json.docHash) setDocHash(json.docHash);
       if (json.duplicate) setDupWarning(json.duplicate);
+      setEmbeddedImages(json.embeddedImages ?? []);
     } catch { setUploadError("Upload failed — network error"); }
     finally {
       setUploading(false);
@@ -1928,7 +1941,7 @@ export default function ForumTestUI() {
   const clearDocument = () => {
     setUploadResult(null); setAppliedCtx(null);
     setCtxApplied(false);  setUploadError(null); setInput("");
-    setDocHash(null); setDupWarning(null);
+    setDocHash(null); setDupWarning(null); setEmbeddedImages([]);
   };
 
   // ── SSE ─────────────────────────────────────────────────────────────────────
@@ -2073,6 +2086,7 @@ export default function ForumTestUI() {
           mode: apiMode,
           documentContent: !!uploadResult,
           docHash: docHash ?? undefined,
+          embeddedImages: embeddedImages.length > 0 ? embeddedImages : undefined,
           priorTicket: priorTicket.trim() || null,
           inputMode: inputMode ?? "review",
           debateFocusAreas: debateFocusAreas.trim() || null,
@@ -2933,7 +2947,7 @@ export default function ForumTestUI() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       {completedAgents.filter(a => !a.skipped).map(a => {
                         const meta = AGENT_META[a.agentId];
-                        const tokens = a.outputTokens ?? Math.ceil(a.content.length / 4);
+                        const tokens = (a.inputTokens ?? 0) + (a.outputTokens ?? 0);
                         return (
                           <div key={a.agentId} style={{ display: "flex", justifyContent: "space-between" }}>
                             <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF" }}>

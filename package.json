@@ -11,15 +11,19 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@types/jszip": "^3.4.0",
     "@types/pdf-parse": "^1.1.5",
+    "@types/unzipper": "^0.10.11",
     "cheerio": "^1.2.0",
     "iron-session": "^8.0.4",
     "jsforce": "^3.10.16",
+    "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
     "next": "14.2.29",
     "pdf-parse": "^2.4.5",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "unzipper": "^0.12.5"
   },
   "devDependencies": {
     "@types/jsforce": "^1.11.6",

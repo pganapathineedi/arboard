@@ -133,6 +133,7 @@ export interface ForumRequest {
   inputMode?: "review" | "greenfield" | "debate";
   debateFocusAreas?: string;
   docHash?: string;
+  embeddedImages?: { name: string; mediaType: string; base64: string }[];
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────

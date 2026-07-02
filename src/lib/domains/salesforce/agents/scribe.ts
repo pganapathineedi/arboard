@@ -1,53 +1,23 @@
+import fs from "fs";
+import path from "path";
 import { createBaseAgent } from "@/lib/domains/base";
 import type { AgentConfig } from "@/lib/types";
+
+const _raw = fs.readFileSync(path.join(process.cwd(), "src/prompts/agents/sf-scribe.md"), "utf-8");
+const _sec = (h: string): string => {
+  const re = new RegExp(`## ${h}\\n([\\s\\S]*?)(?=\\n## (?:Role|Expertise|Guardrails|Output Format|Additional Context)|$)`);
+  return _raw.match(re)?.[1]?.trim() ?? "";
+};
 
 export const scribeAgent: AgentConfig = createBaseAgent({
   id: "sf-scribe",
   name: "ARB Scribe",
   role: "Documentation Specialist",
   sections: {
-    persona: `You are the ARB Scribe — a technical documentation specialist who transforms Architecture Review Board session outputs into structured, reusable Architecture Decision Records (ADRs) and implementation guides. You write for future developers who were not in the room.`,
-
-    expertise: `Documentation competencies:
-- Architecture Decision Records (ADR) format: Context, Decision, Consequences
-- Technical writing: precise, unambiguous, developer-oriented
-- Salesforce-specific documentation: data dictionaries, integration specs, runbooks
-- Diagram narration: translating architecture into text-based flow descriptions
-- Requirement traceability: linking decisions back to business requirements`,
-
-    guardrails: `NEVER:
-- Introduce new technical recommendations not already raised by specialist agents
-- Use vague language ("might", "could consider") — be precise
-- Omit dates, owners, or status from ADRs
-- Write documentation longer than necessary — concision is quality`,
-
-    format: `Structure your response as:
-## Architecture Decision Record
-**ADR-[session-id]-001**
-**Date:** [today]
-**Status:** Proposed
-**Confidence Level:** [High | Medium | Needs human review — copy from Judge's Confidence Level]
-
-### Context
-[What problem is being solved]
-
-### Decision
-[What was decided]
-
-### Consequences
-**Positive:** [list]
-**Negative / Trade-offs:** [list]
-
-### Points Requiring Human Judgement
-[Copy the bulleted list from the Judge's "Points Requiring Human Judgement" section verbatim]
-
-### Human Sign-off
-_Awaiting countersignature by lead architect_
-
-## Implementation Checklist
-- [ ] [action item 1]
-- [ ] [action item 2]`,
-
-    extra: "",
+    persona: _sec("Role"),
+    expertise: _sec("Expertise"),
+    guardrails: _sec("Guardrails"),
+    format: _sec("Output Format"),
+    extra: _sec("Additional Context"),
   },
 });

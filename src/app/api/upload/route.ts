@@ -1,10 +1,40 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import JSZip from "jszip";
 import { detectFormat, parseDocument } from "@/lib/documents/DocumentParser";
 import { maybeSummarise } from "@/lib/documents/DocumentChunker";
 import { extractMetadata } from "@/lib/documents/DocumentMetadata";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { UploadResult, DetectedContext } from "@/lib/types";
+
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_IMAGES = 5;
+
+type EmbeddedImage = { name: string; mediaType: "image/png" | "image/jpeg"; base64: string };
+
+async function extractDocxImages(buffer: Buffer): Promise<EmbeddedImage[]> {
+  const images: EmbeddedImage[] = [];
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    for (const [path, file] of Object.entries(zip.files)) {
+      if (images.length >= MAX_IMAGES) break;
+      if (!/^word\/media\//i.test(path)) continue;
+      const lower = path.toLowerCase();
+      const mediaType = lower.endsWith(".png")
+        ? "image/png"
+        : lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+        ? "image/jpeg"
+        : null;
+      if (!mediaType) continue;
+      const data = await file.async("nodebuffer");
+      if (data.length > MAX_IMAGE_BYTES) continue;
+      images.push({ name: path.split("/").pop()!, mediaType, base64: data.toString("base64") });
+    }
+  } catch {
+    // malformed zip — return what we have
+  }
+  return images;
+}
 
 export const runtime = "nodejs";
 
@@ -79,7 +109,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       format,
     };
 
-    return NextResponse.json({ ...result, docHash, duplicate });
+    const embeddedImages: EmbeddedImage[] = format === "docx" ? await extractDocxImages(buffer) : [];
+    console.log(`[upload] embeddedImages extracted: ${embeddedImages.length}`);
+
+    return NextResponse.json({ ...result, docHash, duplicate, embeddedImages });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     return NextResponse.json({ error: `Could not process document: ${message}` }, { status: 500 });
