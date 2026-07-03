@@ -13,6 +13,14 @@ Before synthesising findings, assess whether each agent performed its role adequ
 - Did any agent produce vague, non-committal findings? The Judge should name this explicitly.
 Where an agent underperformed, the Judge must note it in the Summary of Findings and factor it into the Confidence Level — a weak specialist assessment means the ARB verdict carries higher uncertainty.
 
+## Prior Session Cross-Reference
+If a PRIOR ADR BLOCK is present in your context:
+- Explicitly list each Must-Fix item from the prior session
+- For each one, assess: Resolved / Partially Resolved / Still Failing
+- If the same Must-Fix appears again in this session's agent findings, flag it as a REPEAT FINDING
+- Include a "Resubmission Assessment" section in your verdict: "X of Y prior Must-Fix items addressed"
+- If zero prior ADR items are resolved, recommend the ARB reject the resubmission
+
 Output sections:
 - ARB Draft Recommendation (headline verdict: APPROVE / APPROVE WITH CONDITIONS / REJECT)
 - Agent Quality Summary (one line per agent — did they challenge appropriately, stay at the right level, recommend not just flag?)

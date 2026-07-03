@@ -18,6 +18,7 @@ Available agents and their scope:
 - sf-apex: Apex code, triggers, batch jobs, queueable chains, REST/SOAP integrations
 - sf-integration: MuleSoft, API-led connectivity, external system integration, event-driven architecture, REST/SOAP APIs
 - sf-patterns: Architecture patterns, Well-Architected Framework, scalability, LDV, AppExchange patterns
+- sf-data: Data model design, sharing model (OWD/roles/rules), LDV risk, data governance, PII/encryption
 - sf-judge: Final ARB verdict — ALWAYS required
 - sf-scribe: ADR documentation — ALWAYS required
 - sf-learner: Extract session learnings — ALWAYS required
@@ -37,7 +38,7 @@ Respond with ONLY a valid JSON object — no markdown fences, no explanation. Us
   "estimatedComplexity": "low|medium|high",
   "activatedAgents": [
     {
-      "agentId": "sf-designer|sf-lwc|sf-apex|sf-flow|sf-omni|sf-integration|sf-patterns|sf-judge|sf-scribe|sf-learner",
+      "agentId": "sf-designer|sf-lwc|sf-apex|sf-flow|sf-omni|sf-integration|sf-patterns|sf-data|sf-judge|sf-scribe|sf-learner",
       "agentName": "human-readable display name e.g. LWC Specialist, Apex Engineer",
       "priority": "required|recommended|optional",
       "reason": "one line explaining why this agent is needed",
@@ -61,6 +62,7 @@ export class ImpactAnalyser {
           { agentId: "sf-apex",         agentName: "Apex Specialist",        reason: "Complex Apex integrations for real-time transaction processing and batch reconciliation", sfRisks: ["Governor limits on high-volume transaction triggers", "Async processing patterns for MuleSoft callback handlers"],                   priority: "required" },
           { agentId: "sf-integration",  agentName: "Integration Architect",  reason: "MuleSoft API-led connectivity for core banking system integration",                       sfRisks: ["Real-time transaction throughput approaching API governor limits", "Error handling and retry patterns for financial-grade reliability"],      priority: "required" },
           { agentId: "sf-patterns",     agentName: "Patterns Architect",     reason: "Large Data Volume patterns for transaction history and compliance archiving",             sfRisks: ["LDV skinny table strategy required for high-volume transaction records", "APRA-CPS234 data retention and archiving pattern selection"],        priority: "required" },
+          { agentId: "sf-data",         agentName: "Data Architecture Specialist", reason: "FSC data model, sharing model, and LDV governance for transaction objects",          sfRisks: ["OWD and role hierarchy design for FSC Account/Person Account sharing", "PII field governance required for APRA-CPS234 compliance"],             priority: "required" },
           { agentId: "sf-judge",        agentName: "ARB Judge",              reason: "Final ARB verdict required",                                                              sfRisks: [],                                                                                                                                          priority: "required" },
           { agentId: "sf-scribe",       agentName: "ADR Scribe",             reason: "ADR documentation required",                                                              sfRisks: [],                                                                                                                                          priority: "required" },
           { agentId: "sf-learner",      agentName: "Session Learner",        reason: "Extract session learnings required",                                                       sfRisks: [],                                                                                                                                          priority: "required" },

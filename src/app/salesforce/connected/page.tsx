@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function SalesforceConnected() {
+function ConnectedContent() {
   const params = useSearchParams();
   const error = params.get("error");
   const [closed, setClosed] = useState(false);
@@ -39,5 +39,13 @@ export default function SalesforceConnected() {
         {closed ? "You can close this window" : "Closing…"}
       </span>
     </div>
+  );
+}
+
+export default function SalesforceConnected() {
+  return (
+    <Suspense>
+      <ConnectedContent />
+    </Suspense>
   );
 }

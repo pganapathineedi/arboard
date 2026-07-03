@@ -118,7 +118,7 @@ const MODEL_CONFIG: Record<ModelId, {
 };
 
 const ALL_AGENT_IDS = [
-  "sf-designer", "sf-lwc", "sf-omniStudio", "sf-flow",
+  "sf-designer", "sf-lwc", "sf-omni", "sf-flow",
   "sf-apex", "sf-patterns", "sf-integration", "sf-judge", "sf-scribe", "sf-learner",
 ];
 
@@ -127,7 +127,7 @@ const AGENT_META: Record<string, {
 }> = {
   "sf-designer":   { icon: "🎨", color: "#00c8f0", badge: "SOLUTION ARCH",  estSeconds: 45, shortName: "Designer"   },
   "sf-lwc":        { icon: "⚡", color: "#00c8f0", badge: "UI SPECIALIST",   estSeconds: 28, shortName: "LWC"        },
-  "sf-omniStudio": { icon: "🔮", color: "#9f70f5", badge: "OMNI EXPERT",     estSeconds: 32, shortName: "OmniStudio" },
+  "sf-omni":       { icon: "🔮", color: "#9f70f5", badge: "OMNI EXPERT",     estSeconds: 32, shortName: "OmniStudio" },
   "sf-flow":       { icon: "🔄", color: "#f0a020", badge: "FLOW BUILDER",    estSeconds: 35, shortName: "Flow"       },
   "sf-apex":       { icon: "⚙️",  color: "#e84040", badge: "APEX EXPERT",    estSeconds: 40, shortName: "Apex"       },
   "sf-patterns":    { icon: "📐", color: "#0fba7a", badge: "PATTERNS",        estSeconds: 35, shortName: "Patterns"    },
@@ -481,6 +481,160 @@ function ModelDropdown({
   );
 }
 
+// ── ROI Estimator ─────────────────────────────────────────────────────────────
+
+type RoiComplexity = "low" | "medium" | "high";
+
+function computeRoi(rate: number, architects: number, complexity: RoiComplexity, arbCost: number) {
+  const mult    = complexity === "high" ? 2 : complexity === "medium" ? 1.5 : 1;
+  const rework  = complexity === "high" ? 20000 : complexity === "medium" ? 10000 : 5000;
+  const prep    = architects * 3 * rate * mult;
+  const meeting = architects * 2 * rate * mult;
+  const total   = prep + meeting + rework;
+  const saving  = total - arbCost;
+  const savingPct     = Math.round((saving / total) * 100);
+  const hoursReturned = architects * 3;
+  return { prep, meeting, rework, total, saving, savingPct, hoursReturned };
+}
+
+const fmtSavingPct = (pct: number) => pct >= 100 ? ">99%" : `${pct}%`;
+
+function ARBCostEstimator({
+  arbCost, roiRate, setRoiRate, roiArchitects, setRoiArchitects, roiComplexity, setRoiComplexity,
+}: {
+  arbCost: number;
+  roiRate: number;
+  setRoiRate: (v: number) => void;
+  roiArchitects: number;
+  setRoiArchitects: (v: number) => void;
+  roiComplexity: RoiComplexity;
+  setRoiComplexity: (v: RoiComplexity) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const roi = computeRoi(roiRate, roiArchitects, roiComplexity, arbCost);
+  const fmt = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+  const inputStyle: React.CSSProperties = {
+    background: "#0f1420", border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "#F0F4FF",
+    fontFamily: "monospace", outline: "none", width: "100%",
+  };
+
+  return (
+    <div style={{ ...S.panel, marginBottom: 14, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "11px 16px", background: "transparent", border: "none", cursor: "pointer",
+          borderBottom: open ? "1px solid rgba(255,255,255,0.06)" : "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#F0F4FF" }}>
+            ARB Cost Estimator
+          </span>
+          {!open && (
+            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#0fba7a" }}>
+              ~{fmt(roi.saving)} projected saving · {roi.hoursReturned} arch-hrs returned
+            </span>
+          )}
+        </div>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "14px 18px" }}>
+          {/* Inputs */}
+          <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...S.label, marginBottom: 5 }}>Architect Rate</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 12, color: "#7B8DB0" }}>$</span>
+                <input type="number" min={1} value={roiRate}
+                  onChange={e => setRoiRate(Math.max(1, Number(e.target.value)))}
+                  style={inputStyle}
+                />
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", whiteSpace: "nowrap" }}>/hr</span>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...S.label, marginBottom: 5 }}>Architects in Review</div>
+              <input type="number" min={1} value={roiArchitects}
+                onChange={e => setRoiArchitects(Math.max(1, Number(e.target.value)))}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...S.label, marginBottom: 5 }}>Complexity</div>
+              <select value={roiComplexity}
+                onChange={e => setRoiComplexity(e.target.value as RoiComplexity)}
+                style={{ ...inputStyle, cursor: "pointer" }}
+              >
+                <option value="low">Low · 1×</option>
+                <option value="medium">Medium · 1.5×</option>
+                <option value="high">High · 2×</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", marginBottom: 14 }} />
+
+          {/* Outputs */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {/* Human ARB side */}
+            <div style={{ ...S.card, padding: "12px 14px" }}>
+              <div style={{ ...S.label, marginBottom: 10 }}>Human ARB Estimated Cost</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                {[
+                  { label: `Prep (${roiArchitects} arch × 3h × $${roiRate})`, value: fmt(roi.prep), color: "#F0F4FF" },
+                  { label: `Meeting (${roiArchitects} arch × 2h × $${roiRate})`, value: fmt(roi.meeting), color: "#F0F4FF" },
+                  { label: `Rework risk (${roiComplexity})`, value: fmt(roi.rework), color: "#f0a020" },
+                ].map(row => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>{row.label}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: row.color, flexShrink: 0 }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: 1, background: "rgba(255,255,255,0.06)", marginBottom: 8 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ ...S.label }}>Total</span>
+                <span style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: "#F0F4FF" }}>{fmt(roi.total)}</span>
+              </div>
+            </div>
+
+            {/* ARBoard side */}
+            <div style={{ ...S.card, padding: "12px 14px" }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>ARBoard Estimated Cost</div>
+              <div style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 700, color: "#00c8f0", marginBottom: 12 }}>
+                {formatCost(arbCost)}
+              </div>
+              <div style={{ height: 1, background: "rgba(255,255,255,0.06)", marginBottom: 10 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ ...S.label }}>Projected Saving</span>
+                <span style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#0fba7a" }}>
+                  {fmt(roi.saving)}&nbsp;<span style={{ fontSize: 10 }}>({fmtSavingPct(roi.savingPct)})</span>
+                </span>
+              </div>
+              <div style={{
+                padding: "8px 10px", borderRadius: 6,
+                background: "rgba(15,186,122,0.07)", border: "1px solid rgba(15,186,122,0.2)",
+              }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: "#0fba7a" }}>
+                  {roi.hoursReturned} architect-hours returned to delivery
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── AgentSelectorPanel ────────────────────────────────────────────────────────
 
 const ALWAYS_ON_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
@@ -488,6 +642,7 @@ const ALWAYS_ON_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 function AgentSelectorPanel({
   analysis, model, input, selectedAgentIds, onToggle, onReset, onRun,
   lastSyncTime, orgConnected, onRefreshOrg, documentMode,
+  roiRate, setRoiRate, roiArchitects, setRoiArchitects, roiComplexity, setRoiComplexity,
 }: {
   analysis: ImpactAnalysis;
   model: ModelId;
@@ -500,6 +655,12 @@ function AgentSelectorPanel({
   orgConnected: boolean;
   onRefreshOrg: () => void;
   documentMode?: boolean;
+  roiRate: number;
+  setRoiRate: (v: number) => void;
+  roiArchitects: number;
+  setRoiArchitects: (v: number) => void;
+  roiComplexity: RoiComplexity;
+  setRoiComplexity: (v: RoiComplexity) => void;
 }) {
   const analysisAgentSet = new Set((analysis.activatedAgents ?? []).map(a => a.agentId));
   const addableAgents = ALL_AGENT_IDS.filter(id => !analysisAgentSet.has(id));
@@ -685,6 +846,14 @@ function AgentSelectorPanel({
             </div>
           );
         })()}
+
+        {/* ROI Estimator (collapsible, defaults closed) */}
+        <ARBCostEstimator
+          arbCost={est.cost}
+          roiRate={roiRate} setRoiRate={setRoiRate}
+          roiArchitects={roiArchitects} setRoiArchitects={setRoiArchitects}
+          roiComplexity={roiComplexity} setRoiComplexity={setRoiComplexity}
+        />
 
         {/* Main row */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -1749,6 +1918,10 @@ export default function ForumTestUI() {
   const [signOff, setSignOff] = useState<{ name: string; role: string; timestamp: string } | null>(null);
   const [patternDetails, setPatternDetails] = useState<{ id: string; title: string; severity: string }[]>([]);
 
+  const [roiRate, setRoiRate]             = useState(150);
+  const [roiArchitects, setRoiArchitects] = useState(5);
+  const [roiComplexity, setRoiComplexity] = useState<RoiComplexity>("medium");
+
   const [priorTicket, setPriorTicket]                 = useState("");
   const [debateFocusAreas, setDebateFocusAreas]       = useState("");
   const [revisionRound, setRevisionRound]             = useState(0);
@@ -1813,6 +1986,12 @@ export default function ForumTestUI() {
 
   const matchedPatternIdsRef = useRef<string[]>([]);
   matchedPatternIdsRef.current = matchedPatternIds;
+
+  useEffect(() => {
+    if (analysis?.estimatedComplexity) {
+      setRoiComplexity(analysis.estimatedComplexity as RoiComplexity);
+    }
+  }, [analysis?.estimatedComplexity]);
 
   useEffect(() => {
     if (!sessionComplete) return;
@@ -2697,6 +2876,9 @@ export default function ForumTestUI() {
             orgConnected={orgStatus === "connected"}
             onRefreshOrg={handleOrgRefresh}
             documentMode={!!uploadResult}
+            roiRate={roiRate} setRoiRate={setRoiRate}
+            roiArchitects={roiArchitects} setRoiArchitects={setRoiArchitects}
+            roiComplexity={roiComplexity} setRoiComplexity={setRoiComplexity}
           />
         )}
 
@@ -2962,6 +3144,45 @@ export default function ForumTestUI() {
                     </div>
                   </>
                 )}
+
+                {/* ROI Summary */}
+                {(() => {
+                  const roi = computeRoi(roiRate, roiArchitects, roiComplexity, actualCost);
+                  const fmt = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+                  return (
+                    <>
+                      <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "14px 0" }} />
+                      <div style={{ ...S.label, marginBottom: 10, color: "#00c8f0" }}>ROI Summary</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 12 }}>
+                        <div>
+                          <div style={S.label}>Human ARB Cost</div>
+                          <div style={{ fontFamily: "monospace", fontSize: 14, color: "#F0F4FF", fontWeight: 700 }}>{fmt(roi.total)}</div>
+                          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginTop: 2 }}>
+                            {roiArchitects} arch · {roiComplexity} complexity
+                          </div>
+                        </div>
+                        <div>
+                          <div style={S.label}>Actual ARBoard Cost</div>
+                          <div style={{ fontFamily: "monospace", fontSize: 14, color: "#00c8f0", fontWeight: 700 }}>{formatCost(actualCost)}</div>
+                        </div>
+                        <div>
+                          <div style={S.label}>Actual Saving</div>
+                          <div style={{ fontFamily: "monospace", fontSize: 14, color: "#0fba7a", fontWeight: 700 }}>
+                            {fmt(roi.saving)} <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 400 }}>({fmtSavingPct(roi.savingPct)})</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: "10px 14px", borderRadius: 6,
+                        background: "rgba(15,186,122,0.07)", border: "1px solid rgba(15,186,122,0.15)",
+                      }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 12, color: "#0fba7a" }}>
+                          This session returned {roi.hoursReturned} architect-hours of prep time to delivery
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </>

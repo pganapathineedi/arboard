@@ -13,14 +13,18 @@ import { persistLearnerOutput } from "@/lib/memory/learnerPersist";
 import { fetchTicket } from "@/lib/integrations/jira";
 import { retrieveOrgLearnings } from "@/lib/memory/orgLearningsRetriever";
 import { buildOrgLearningsBlock } from "@/lib/memory/contextInjector";
+import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoader";
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
+const JUDGE_MAX_TOKENS = 8000;
+const OMNI_KEYWORDS = /OmniScript|FlexCard|OmniStudio|DataRaptor|Vlocity/i;
 
 function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBlock?: string | null, priorADRBlock?: string | null): AgentConfig {
   const overrides: Partial<AgentConfig> = {};
   const HAIKU_ONLY = new Set(["sf-scribe", "sf-learner"]);
   if (request.modelOverride && !HAIKU_ONLY.has(agent.id)) overrides.model = request.modelOverride;
+  if (agent.id === "sf-judge") overrides.maxTokens = JUDGE_MAX_TOKENS;
   if (request.orgContextStr) overrides.orgContext = request.orgContextStr;
   const combined = [memoryBlock, priorADRBlock].filter(Boolean).join('\n\n');
   if (combined) overrides.memoryBlock = combined;
@@ -39,7 +43,7 @@ function buildEffectiveAgent(agent: AgentConfig, request: ForumRequest, memoryBl
     if (request.debateFocusAreas) {
       debateLines.push("", `Focus areas requested by submitter: ${request.debateFocusAreas}`);
     }
-    overrides.systemPrompt = agent.systemPrompt + "\n" + debateLines.join("\n");
+    overrides.sections = { ...agent.sections, extra: (agent.sections.extra ? agent.sections.extra + '\n\n' : '') + debateLines.join('\n') };
   }
   return Object.keys(overrides).length > 0 ? { ...agent, ...overrides } : agent;
 }
@@ -187,6 +191,20 @@ export class ForumOrchestrator {
       console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
     }
 
+    // ── Skills injection ──────────────────────────────────────────────────────
+    const documentText = request.input;
+    const crossCuttingSkillsBlock = loadCrossCuttingSkills(documentText);
+    for (const agent of domain.agents) {
+      const domainSkill = loadDomainSkill(agent.id);
+      const skillsBlock = domainSkill + crossCuttingSkillsBlock;
+      if (skillsBlock) {
+        console.log('[skills] loaded for', agent.id, skillsBlock.length, 'chars');
+        memoryBlocks[agent.id] = memoryBlocks[agent.id]
+          ? memoryBlocks[agent.id] + '\n\n' + skillsBlock
+          : skillsBlock;
+      }
+    }
+
     // ── Org learnings injection ───────────────────────────────────────────────
     const orgLearningRows = await retrieveOrgLearnings(domainId);
     const orgLearningsBlock = buildOrgLearningsBlock(orgLearningRows);
@@ -253,6 +271,9 @@ export class ForumOrchestrator {
     // ── Phase split ───────────────────────────────────────────────────────────
     const designer    = isRevision ? undefined : allAgents.find(a => a.id === DESIGNER_ID);
     const specialists = allAgents.filter(a => a.id !== DESIGNER_ID && !CLOSING_IDS.has(a.id));
+    const filteredSpecialists = specialists.filter(
+      a => a.id !== "sf-omni" || OMNI_KEYWORDS.test(request.input),
+    );
     const closing     = allAgents.filter(a => CLOSING_IDS.has(a.id));
 
     const usePhasedFlow = !!designer || isRevision;
@@ -299,7 +320,7 @@ export class ForumOrchestrator {
           designerOutput = request.input;
         }
       } else if (designer && request.documentContent && request.inputMode !== "debate") {
-        designerOutput = request.documentContent;
+        designerOutput = request.input;
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
         yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, agentName: designer.name, role: designer.role, output: "", status: "skipped", reason: "Document upload — design already exists, review mode only", durationMs: 0 })}\n\n`;
       } else if (isRevision) {
@@ -312,7 +333,7 @@ export class ForumOrchestrator {
         : buildReviewInput(request.input, designerOutput);
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
-      for (const agent of specialists) {
+      for (const agent of filteredSpecialists) {
         const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
@@ -322,7 +343,7 @@ export class ForumOrchestrator {
         const agentStart = Date.now();
 
         const specialistMeta: Record<string, unknown> = { documentContent: request.documentContent };
-        if (agent.id === "sf-patterns" && request.embeddedImages?.length) specialistMeta.embeddedImages = request.embeddedImages;
+        if ((agent.id === "sf-patterns" || agent.id === "sf-omni") && request.embeddedImages?.length) specialistMeta.embeddedImages = request.embeddedImages;
         try {
           for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, specialistMeta, mode)) {
             if (typeof chunk === "string") {
@@ -362,7 +383,7 @@ export class ForumOrchestrator {
         const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
         const agentInput = agent.id === "sf-judge"
           ? closingInput
-          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock);
+          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 

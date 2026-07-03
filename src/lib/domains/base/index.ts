@@ -2,7 +2,8 @@ import type { AgentConfig, DomainConfig } from "@/lib/types";
 
 export const BASE_MODEL = "claude-haiku-4-5-20251001";
 export const BASE_MAX_TOKENS = 600;
-export const SPECIALIST_MAX_TOKENS = 2000;
+export const SPECIALIST_MAX_TOKENS = 3000;
+export const JUDGE_MAX_TOKENS = 4000;
 
 export function createBaseAgent(partial: Partial<AgentConfig> & Pick<AgentConfig, "id" | "name" | "role" | "sections">): AgentConfig {
   return {
