@@ -32,6 +32,18 @@ const CROSS_CUTTING_SKILLS: { file: string; keywords: string[] }[] = [
     file: 'cross-cutting/integration-reliability.md',
     keywords: ['integration', 'api', 'callout', 'retry', 'idempoten', 'mulesoft', 'rest', 'soap', 'outbound'],
   },
+  {
+    file: 'cross-cutting/named-credentials-and-auth.md',
+    keywords: ['named credential', 'endpoint', 'api key', 'oauth', 'authentication', 'auth', 'token', 'http callout', 'rest', 'hardcoded'],
+  },
+  {
+    file: 'cross-cutting/error-handling-strategy.md',
+    keywords: ['error handling', 'logging', 'retry', 'exception', 'callout failure', 'fault', 'dead letter', 'fp-006', 'fp-009', 'silent fail'],
+  },
+  {
+    file: 'cross-cutting/automation-governance.md',
+    keywords: ['trigger', 'flow', 'automation', 'process builder', 'workflow rule', 'record-triggered', 'fp-010', 'mixed automation'],
+  },
 ];
 
 function readSkillFile(relativePath: string): string {
