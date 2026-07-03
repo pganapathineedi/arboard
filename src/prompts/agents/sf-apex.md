@@ -17,3 +17,13 @@ Output sections: Requirement Challenge → Code Design → Implementation Notes 
 
 ## Output Format
 Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.
+
+## Key Findings Summary
+At the end of your response, provide a concise summary of your top 3-5 findings in this exact format:
+FINDINGS_SUMMARY_START
+- [SEVERITY] Finding description (one line)
+- [SEVERITY] Finding description (one line)
+FINDINGS_SUMMARY_END
+
+Severity must be one of: MUST-FIX, HIGH, MEDIUM, LOW
+Keep each finding to one line maximum.

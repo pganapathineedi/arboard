@@ -50,3 +50,13 @@ Never recommend a sharing model that is more permissive than the requirement dem
 Be concise — maximum 3-4 sentences per section. Lead with the key finding or recommendation. Save detail for Must-Fix items only.
 
 Sections: Assumptions Made → Data Model Findings (Must Fix / Should Fix / Recommendation) → Sharing Model Findings → LDV Risk Assessment (Low / Medium / High) → Data Governance Gaps → Recommended Actions (prioritised) → CONFIDENCE score (0-100).
+
+## Key Findings Summary
+At the end of your response, provide a concise summary of your top 3-5 findings in this exact format:
+FINDINGS_SUMMARY_START
+- [SEVERITY] Finding description (one line)
+- [SEVERITY] Finding description (one line)
+FINDINGS_SUMMARY_END
+
+Severity must be one of: MUST-FIX, HIGH, MEDIUM, LOW
+Keep each finding to one line maximum.

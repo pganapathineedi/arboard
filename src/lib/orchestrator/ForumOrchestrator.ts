@@ -184,6 +184,30 @@ export class ForumOrchestrator {
     let totalCacheReadTokens = 0;
     let totalCacheWriteTokens = 0;
 
+    // ── Episodic memory (session-scoped, resets each forum run) ───────────────
+    const episodicStore: Record<string, string[]> = {};
+
+    function extractFindingsSummary(agentOutput: string): string[] {
+      const match = agentOutput.match(/FINDINGS_SUMMARY_START([\s\S]*?)FINDINGS_SUMMARY_END/);
+      if (!match) return [];
+      return match[1]
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.startsWith('-'));
+    }
+
+    function buildEpisodicBlock(store: Record<string, string[]>): string {
+      const entries = Object.entries(store);
+      if (entries.length === 0) return '';
+
+      const lines = entries.flatMap(([agentId, findings]) => [
+        `**${agentId}:**`,
+        ...findings,
+      ]);
+
+      return `\n\n## PRIOR AGENT FINDINGS\nThe following specialists have already reviewed this document. Factor their findings into your assessment — do not repeat findings already flagged, instead build on them or cross-reference where relevant.\n\n${lines.join('\n')}`;
+    }
+
     // ── Memory retrieval ──────────────────────────────────────────────────────
     const memory = await retrieveMemory(request.input, process.env.CLIENT_ID ?? 'default');
     const memoryBlocks = buildAllAgentMemoryBlocks(memory);
@@ -333,8 +357,13 @@ export class ForumOrchestrator {
         : buildReviewInput(request.input, designerOutput);
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
+      console.log('[forum] mode at specialist loop:', mode);
       for (const agent of filteredSpecialists) {
-        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
+        const episodicBlock = buildEpisodicBlock(episodicStore);
+        const agentMemoryWithEpisodic = episodicBlock
+          ? (memoryBlocks[agent.id] ? memoryBlocks[agent.id] + episodicBlock : episodicBlock)
+          : memoryBlocks[agent.id];
+        const effectiveAgent = buildEffectiveAgent(agent, request, agentMemoryWithEpisodic, priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
 
@@ -345,6 +374,7 @@ export class ForumOrchestrator {
         const specialistMeta: Record<string, unknown> = { documentContent: request.documentContent };
         if ((agent.id === "sf-patterns" || agent.id === "sf-omni") && request.embeddedImages?.length) specialistMeta.embeddedImages = request.embeddedImages;
         try {
+          console.log('[forum] running agent:', agent.id, 'mode:', mode);
           for await (const chunk of AgentRunner.runStream(effectiveAgent, reviewInput, clientContext, sessionId, domainId, orgContext, specialistMeta, mode)) {
             if (typeof chunk === "string") {
               content += chunk;
@@ -359,6 +389,9 @@ export class ForumOrchestrator {
             totalCacheReadTokens += usage.cacheReadTokens ?? 0;
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
+          const findings = extractFindingsSummary(content);
+          if (findings.length > 0) episodicStore[agent.id] = findings;
+          console.log('[episodic] store size:', Object.keys(episodicStore).length, '| agents:', Object.keys(episodicStore).join(', '));
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(reviewInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(content.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
           specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
@@ -380,7 +413,11 @@ export class ForumOrchestrator {
       ];
 
       for (const agent of sortedClosing) {
-        const effectiveAgent = buildEffectiveAgent(agent, request, memoryBlocks[agent.id], priorADRBlock);
+        const closingEpisodicBlock = buildEpisodicBlock(episodicStore);
+        const closingMemoryWithEpisodic = closingEpisodicBlock
+          ? (memoryBlocks[agent.id] ? memoryBlocks[agent.id] + closingEpisodicBlock : closingEpisodicBlock)
+          : memoryBlocks[agent.id];
+        const effectiveAgent = buildEffectiveAgent(agent, request, closingMemoryWithEpisodic, priorADRBlock);
         const agentInput = agent.id === "sf-judge"
           ? closingInput
           : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
