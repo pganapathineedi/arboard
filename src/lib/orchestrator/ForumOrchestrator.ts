@@ -389,6 +389,7 @@ export class ForumOrchestrator {
             totalCacheReadTokens += usage.cacheReadTokens ?? 0;
             totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
           }
+          console.log('[episodic] agent stream closed for', agent.id, 'content length:', content.length);
           const findings = extractFindingsSummary(content);
           if (findings.length > 0) episodicStore[agent.id] = findings;
           console.log('[episodic] store size:', Object.keys(episodicStore).length, '| agents:', Object.keys(episodicStore).join(', '));

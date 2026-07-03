@@ -67,6 +67,9 @@ export class AgentRunner {
         ]
       : finalCtx.input;
 
+    console.log('[agent] model:', agent.model, 'maxTokens:', agent.maxTokens);
+    console.log('[agent] systemPrompt length:', finalCtx.systemPrompt?.length);
+
     const stream = anthropic.messages.stream({
       model: agent.model,
       max_tokens: agent.maxTokens,
@@ -80,19 +83,24 @@ export class AgentRunner {
     let cacheReadTokens = 0;
     let cacheWriteTokens = 0;
 
-    for await (const event of stream) {
-      if (event.type === "message_start") {
-        inputTokens = event.message.usage.input_tokens;
-        cacheReadTokens = (event.message.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0;
-        cacheWriteTokens = (event.message.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0;
-      } else if (event.type === "message_delta") {
-        outputTokens = event.usage.output_tokens;
-      } else if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        yield event.delta.text;
+    try {
+      for await (const event of stream) {
+        if (event.type === "message_start") {
+          inputTokens = event.message.usage.input_tokens;
+          cacheReadTokens = (event.message.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0;
+          cacheWriteTokens = (event.message.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0;
+        } else if (event.type === "message_delta") {
+          outputTokens = event.usage.output_tokens;
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield event.delta.text;
+        }
       }
+    } catch (err) {
+      console.error('[agent] stream error for', agent.id, ':', err);
+      throw err;
     }
 
     yield { __usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } };

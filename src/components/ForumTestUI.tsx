@@ -1257,6 +1257,7 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
   const conf = agent.complete ? parseConfidence(agent.content) : null;
   const isStreaming = !agent.complete && !agent.error;
   const isDesigner = agent.agentId === "sf-designer";
+  const cleanContent = agent.content.replace(/FINDINGS_SUMMARY_START[\s\S]*?FINDINGS_SUMMARY_END/g, '').trim();
 
   const borderColor = agent.error
     ? "#e84040"
@@ -1325,11 +1326,11 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
       <div style={{ padding: 16 }}>
         {agent.error ? (
           <span style={{ fontSize: 13, color: "#e84040" }}>{agent.error}</span>
-        ) : agent.content ? (
-          <MarkdownOutput content={agent.content} />
+        ) : cleanContent ? (
+          <MarkdownOutput content={cleanContent} />
         ) : (
           <div style={{ fontSize: 13, color: "#7B8DB0", lineHeight: 1.7 }}>
-            {agent.content || <span>Waiting…</span>}
+            {cleanContent || <span>Waiting…</span>}
             {isStreaming && <span className="arboard-blink" />}
           </div>
         )}
