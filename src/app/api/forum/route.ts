@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ForumRequest } from "@/lib/types";
 import { ForumOrchestrator } from "@/lib/orchestrator/ForumOrchestrator";
+import { requireApiKey } from "@/lib/auth/requireApiKey";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   let body: ForumRequest;
 
   try {
@@ -19,17 +22,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const mode = (body as { mode?: string }).mode === "real" ? "real" : "mock";
-  process.env.ANTHROPIC_API_KEY =
-    mode === "real"
-      ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
-      : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock");
-  console.log('[route] REAL key present:', !!process.env.ANTHROPIC_API_KEY_REAL, 'ANTHROPIC_API_KEY after set:', process.env.ANTHROPIC_API_KEY?.slice(0, 15));
-
+  const apiKey = mode === "real"
+    ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
+    : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock")
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
       try {
-        console.log('[route] calling streamForum with mode:', mode);
+        // TODO: pass apiKey into analyser instead of process.env
         for await (const chunk of ForumOrchestrator.streamForum(body, mode)) {
           controller.enqueue(encoder.encode(chunk));
         }

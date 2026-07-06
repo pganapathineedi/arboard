@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { requireApiKey } from "@/lib/auth/requireApiKey";
 
 const PATTERNS = [
   {
@@ -103,7 +104,9 @@ const PATTERNS = [
   },
 ];
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   const sb = getSupabaseClient();
   if (!sb) {
     return NextResponse.json({ error: "Supabase unavailable" }, { status: 503 });

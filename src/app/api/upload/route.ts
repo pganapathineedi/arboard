@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
+import { requireApiKey } from "@/lib/auth/requireApiKey";
 import { detectFormat, parseDocument } from "@/lib/documents/DocumentParser";
 import { maybeSummarise } from "@/lib/documents/DocumentChunker";
 import { extractMetadata } from "@/lib/documents/DocumentMetadata";
@@ -41,6 +42,8 @@ export const runtime = "nodejs";
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   let formData: FormData;
   try {
     formData = await req.formData();

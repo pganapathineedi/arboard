@@ -5,6 +5,10 @@ export function isMockMode(): boolean {
   return !key || key === "mock";
 }
 
+export function isMockModeExplicit(mode: "real" | "mock"): boolean {
+  return mode === "mock";
+}
+
 // Simulates streaming by yielding chunks with realistic pacing
 export async function* mockStream(text: string): AsyncGenerator<string> {
   const words = text.split(" ");

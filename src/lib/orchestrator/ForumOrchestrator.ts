@@ -14,6 +14,7 @@ import { fetchTicket } from "@/lib/integrations/jira";
 import { retrieveOrgLearnings } from "@/lib/memory/orgLearningsRetriever";
 import { buildOrgLearningsBlock } from "@/lib/memory/contextInjector";
 import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoader";
+import { SessionTracer } from '@/lib/tracing/SessionTracer'
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
@@ -184,6 +185,15 @@ export class ForumOrchestrator {
     let totalCacheReadTokens = 0;
     let totalCacheWriteTokens = 0;
 
+    const tracer = new SessionTracer({
+      sessionId,
+      clientId: process.env.CLIENT_ID ?? 'default',
+      domain: domainId,
+      mode,
+      documentHash: request.docHash,
+      agentCount: 0,
+    })
+
     // ── Episodic memory (session-scoped, resets each forum run) ───────────────
     const episodicStore: Record<string, string[]> = {};
 
@@ -291,6 +301,8 @@ export class ForumOrchestrator {
     }
 
     const allAgents = ForumOrchestrator.getAgents(domain, selectedAgentIds);
+    tracer.agentCount = allAgents.length
+    await tracer.startSession()
 
     // ── Phase split ───────────────────────────────────────────────────────────
     const designer    = isRevision ? undefined : allAgents.find(a => a.id === DESIGNER_ID);
@@ -366,6 +378,13 @@ export class ForumOrchestrator {
         const effectiveAgent = buildEffectiveAgent(agent, request, agentMemoryWithEpisodic, priorADRBlock);
 
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
+        await tracer.startAgent({
+          agentId: agent.id,
+          agentName: agent.name,
+          model: effectiveAgent.model ?? 'claude-sonnet-4-6',
+          round: 1,
+          sequenceNumber: specialistOutputs.length + 1,
+        })
 
         let content = "";
         let usage: UsageData | undefined;
@@ -395,10 +414,18 @@ export class ForumOrchestrator {
           console.log('[episodic] store size:', Object.keys(episodicStore).length, '| agents:', Object.keys(episodicStore).join(', '));
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(reviewInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(content.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
+          await tracer.completeAgent({
+            inputTokens: usage?.inputTokens,
+            outputTokens: usage?.outputTokens,
+            estimatedCostUsd: usage ? estimateCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheReadTokens ?? 0, usage.cacheWriteTokens ?? 0, request.modelOverride) : undefined,
+            findingsSummary: extractFindingsSummary(content),
+            mustFixCount: extractFindingsSummary(content).filter(f => f.toLowerCase().includes('must-fix') || f.toLowerCase().includes('must fix')).length,
+          })
           specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
+          await tracer.failAgent(agent.id, message)
           if (content) specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
         }
       }
@@ -413,24 +440,29 @@ export class ForumOrchestrator {
         ...closing.filter(a => a.id !== "sf-judge"),
       ];
 
-      for (const agent of sortedClosing) {
+      // Run sf-judge sequentially first
+      const judgeAgent = sortedClosing.find(a => a.id === "sf-judge")!;
+      {
+        const agent = judgeAgent;
         const closingEpisodicBlock = buildEpisodicBlock(episodicStore);
         const closingMemoryWithEpisodic = closingEpisodicBlock
           ? (memoryBlocks[agent.id] ? memoryBlocks[agent.id] + closingEpisodicBlock : closingEpisodicBlock)
           : memoryBlocks[agent.id];
         const effectiveAgent = buildEffectiveAgent(agent, request, closingMemoryWithEpisodic, priorADRBlock);
-        const agentInput = agent.id === "sf-judge"
-          ? closingInput
-          : buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
-
+        const agentInput = closingInput;
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
-
+        await tracer.startAgent({
+          agentId: agent.id,
+          agentName: agent.name,
+          model: effectiveAgent.model ?? 'claude-sonnet-4-6',
+          round: 1,
+          sequenceNumber: specialistOutputs.length + 2,
+        })
         let agentContent = "";
         let usage: UsageData | undefined;
         const agentStart = Date.now();
-
         const closingMeta: Record<string, unknown> = { documentContent: request.documentContent };
-        if (agent.id === "sf-judge" && request.embeddedImages?.length) closingMeta.embeddedImages = request.embeddedImages;
+        if (request.embeddedImages?.length) closingMeta.embeddedImages = request.embeddedImages;
         try {
           for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, closingMeta, mode)) {
             if (typeof chunk === "string") {
@@ -441,6 +473,13 @@ export class ForumOrchestrator {
             }
           }
           closingOutputs[agent.id] = agentContent;
+          await tracer.completeAgent({
+            inputTokens: usage?.inputTokens,
+            outputTokens: usage?.outputTokens,
+            estimatedCostUsd: usage ? estimateCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheReadTokens ?? 0, usage.cacheWriteTokens ?? 0, request.modelOverride) : undefined,
+            findingsSummary: extractFindingsSummary(agentContent),
+            mustFixCount: parseMustFixForADR(agentContent).length,
+          })
           if (usage) {
             totalInputTokens += usage.inputTokens;
             totalOutputTokens += usage.outputTokens;
@@ -452,9 +491,79 @@ export class ForumOrchestrator {
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
+          await tracer.failAgent(agent.id, message)
         }
       }
 
+      // Run sf-scribe and sf-learner in parallel
+      const parallelAgents = sortedClosing.filter(a => a.id === "sf-scribe" || a.id === "sf-learner");
+      const parallelChunks: Array<Array<string>> = [[], []];
+      const parallelUsages: Array<UsageData | undefined> = [undefined, undefined];
+      const parallelStarts = parallelAgents.map(() => Date.now());
+
+      const parallelAgentTraceIds: string[] = []
+      for (let i = 0; i < parallelAgents.length; i++) {
+        const agent = parallelAgents[i];
+        yield `data: ${JSON.stringify({ type: "agent_start", agentId: agent.id, agentName: agent.name, role: agent.role })}\n\n`;
+        const agentTraceId = await tracer.startAgent({
+          agentId: agent.id,
+          agentName: agent.name,
+          model: 'claude-haiku-4-5-20251001',
+          round: 1,
+          sequenceNumber: specialistOutputs.length + 3 + i,
+        })
+        parallelAgentTraceIds.push(agentTraceId)
+      }
+
+      await Promise.all(parallelAgents.map(async (agent, i) => {
+        const closingEpisodicBlock = buildEpisodicBlock(episodicStore);
+        const closingMemoryWithEpisodic = closingEpisodicBlock
+          ? (memoryBlocks[agent.id] ? memoryBlocks[agent.id] + closingEpisodicBlock : closingEpisodicBlock)
+          : memoryBlocks[agent.id];
+        const effectiveAgent = buildEffectiveAgent(agent, request, closingMemoryWithEpisodic, priorADRBlock);
+        const agentInput = buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
+        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent };
+        let agentContent = "";
+        try {
+          for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, closingMeta, mode)) {
+            if (typeof chunk === "string") {
+              agentContent += chunk;
+              parallelChunks[i].push(chunk);
+            } else {
+              parallelUsages[i] = chunk.__usage;
+            }
+          }
+          closingOutputs[agent.id] = agentContent;
+          await tracer.completeAgent({
+            inputTokens: parallelUsages[i]?.inputTokens,
+            outputTokens: parallelUsages[i]?.outputTokens,
+            estimatedCostUsd: parallelUsages[i] ? estimateCostUsd(parallelUsages[i]!.inputTokens, parallelUsages[i]!.outputTokens, parallelUsages[i]!.cacheReadTokens ?? 0, parallelUsages[i]!.cacheWriteTokens ?? 0, request.modelOverride) : undefined,
+          }, parallelAgentTraceIds[i])
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          parallelChunks[i].push(`ERROR: ${message}`)
+          await tracer.failAgent(agent.id, message)
+        }
+      }));
+
+      // Yield collected chunks and completion events for scribe and learner
+      for (let i = 0; i < parallelAgents.length; i++) {
+        const agent = parallelAgents[i];
+        const usage = parallelUsages[i];
+        const agentInput = buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
+        const agentContent = closingOutputs[agent.id] ?? "";
+        for (const token of parallelChunks[i]) {
+          yield `data: ${JSON.stringify({ type: "token", agentId: agent.id, token })}\n\n`;
+        }
+        if (usage) {
+          totalInputTokens += usage.inputTokens;
+          totalOutputTokens += usage.outputTokens;
+          totalCacheReadTokens += usage.cacheReadTokens ?? 0;
+          totalCacheWriteTokens += usage.cacheWriteTokens ?? 0;
+        }
+        yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - parallelStarts[i], inputTokens: usage?.inputTokens ?? Math.floor(agentInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(agentContent.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
+        yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
+      }
       // ── Save session record (no Jira — gated by EndorsementPanel) ────────
       const judgeContent   = closingOutputs["sf-judge"]   ?? "";
       const scribeContent  = closingOutputs["sf-scribe"]  ?? "";
@@ -546,7 +655,7 @@ ${agentOutputsText}`,
       }
 
       try {
-        await saveADR({
+        const savedAdr = await saveADR({
           requirement:          request.input,
           verdict:              parsedVerdict,
           scribeNotes:          scribeContent,
@@ -566,9 +675,15 @@ ${agentOutputsText}`,
           agentCount:           allAgents.length,
           docHash:              request.docHash,
         });
+        if (savedAdr?.id) await tracer.linkAdr(savedAdr.id)
       } catch (err) {
         console.error("[orchestrator] saveADR failed:", err instanceof Error ? err.message : err);
       }
+      await tracer.finalise({
+        verdict: parsedVerdict,
+        overallRisk: parseVerdictForADR(judgeContent).includes('APPROVED') ? 'low' : 'high',
+        expectedTokenBudget: Math.floor((totalInputTokens + totalOutputTokens) * 0.9),
+      })
 
       yield `data: ${JSON.stringify({ type: "adr_saved", jiraIssueKey: null, jiraIssueUrl: null })}\n\n`;
       yield `data: ${JSON.stringify({

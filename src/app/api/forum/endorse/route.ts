@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createADRIssue } from "@/lib/integrations/jira";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { isMockMode } from "@/lib/mock/mockMode";
+import { requireApiKey } from "@/lib/auth/requireApiKey";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,8 @@ interface EndorseBody {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   let body: EndorseBody;
   try {
     body = (await req.json()) as EndorseBody;

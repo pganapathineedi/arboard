@@ -46,11 +46,17 @@ const CROSS_CUTTING_SKILLS: { file: string; keywords: string[] }[] = [
   },
 ];
 
+const _fileCache = new Map<string, string>();
+
 function readSkillFile(relativePath: string): string {
+  if (_fileCache.has(relativePath)) return _fileCache.get(relativePath)!;
   try {
     const fullPath = path.join(SKILLS_BASE, relativePath);
-    return fs.readFileSync(fullPath, 'utf-8');
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    _fileCache.set(relativePath, content);
+    return content;
   } catch {
+    _fileCache.set(relativePath, '');
     return '';
   }
 }

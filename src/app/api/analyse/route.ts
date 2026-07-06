@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ImpactAnalyser } from "@/lib/analysis/ImpactAnalyser";
+import { requireApiKey } from "@/lib/auth/requireApiKey";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   console.log('[analyse] POST called');
   let body: { input?: string; documentText?: string; domainId?: string; mode?: string };
 
@@ -14,11 +17,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const mode = body.mode === "real" ? "real" : "mock";
-  process.env.ANTHROPIC_API_KEY =
-    mode === "real"
-      ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
-      : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock");
-  console.log("API KEY being used:", process.env.ANTHROPIC_API_KEY?.substring(0, 20));
+  const apiKey = mode === "real"
+    ? (process.env.ANTHROPIC_API_KEY_REAL ?? "")
+    : (process.env.ANTHROPIC_API_KEY_MOCK ?? "mock")
 
   const input = body.documentText ?? body.input ?? "";
   if (!input.trim()) {
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   try {
-    const analysis = await ImpactAnalyser.analyse(input, body.domainId);
+    const analysis = await ImpactAnalyser.analyse(input, body.domainId, undefined, mode);
     return NextResponse.json(analysis);
   } catch (err) {
     console.error("analyse error:", err);

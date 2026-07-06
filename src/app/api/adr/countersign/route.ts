@@ -1,9 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { countersignADR } from '@/lib/adr/store';
+import { requireApiKey } from '@/lib/auth/requireApiKey';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   let body: unknown;
   try {
     body = await req.json();

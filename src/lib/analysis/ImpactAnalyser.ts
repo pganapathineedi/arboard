@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { AgentActivation, ImpactAnalysis } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
-import { isMockMode } from "@/lib/mock/mockMode";
+import { isMockMode, isMockModeExplicit } from "@/lib/mock/mockMode";
 
 const ANALYSER_SYSTEM = `You are a Salesforce Architecture Impact Analyser for an Architecture Review Board.
 You will receive either a SHORT REQUIREMENT (1-3 paragraphs) or a FULL SOLUTION DESIGN DOCUMENT.
@@ -50,8 +50,8 @@ Respond with ONLY a valid JSON object — no markdown fences, no explanation. Us
 
 
 export class ImpactAnalyser {
-  static async analyse(input: string, domainId = "salesforce", orgContext?: OrgContext): Promise<ImpactAnalysis> {
-    if (isMockMode()) {
+  static async analyse(input: string, domainId = "salesforce", orgContext?: OrgContext, mode: "real" | "mock" = "mock"): Promise<ImpactAnalysis> {
+    if (isMockModeExplicit(mode)) {
       await new Promise((r) => setTimeout(r, 800));
       return {
         summary: "NovaPeak Financial Services requires migration of core banking workflows to Salesforce Financial Services Cloud, with real-time transaction processing via MuleSoft and a self-service client portal on Experience Cloud. This spans FSC data model changes, complex Apex integrations, and regulatory compliance under APRA-CPS234.",

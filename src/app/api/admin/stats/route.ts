@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { requireApiKey } from '@/lib/auth/requireApiKey';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = requireApiKey(req)
+  if (authError) return authError
   const supabase = getSupabaseClient();
   if (!supabase) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
