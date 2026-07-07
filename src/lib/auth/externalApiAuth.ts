@@ -1,11 +1,17 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 export interface ApiKeyRecord {
   client_id: string
@@ -33,7 +39,7 @@ export async function validateExternalApiKey(
 
   const keyHash = hashKey(authHeader)
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('api_keys')
     .select('client_id, client_name, tier, daily_limit, is_active')
     .eq('key_hash', keyHash)
@@ -58,7 +64,7 @@ export async function validateExternalApiKey(
   }
 
   // Update last_used_at (non-blocking)
-  supabase
+  getSupabase()
     .from('api_keys')
     .update({ last_used_at: new Date().toISOString() })
     .eq('key_hash', keyHash)
