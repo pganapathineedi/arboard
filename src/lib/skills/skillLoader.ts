@@ -44,6 +44,14 @@ const CROSS_CUTTING_SKILLS: { file: string; keywords: string[] }[] = [
     file: 'cross-cutting/automation-governance.md',
     keywords: ['trigger', 'flow', 'automation', 'process builder', 'workflow rule', 'record-triggered', 'fp-010', 'mixed automation'],
   },
+  {
+    file: 'cross-cutting/well-architected-framework.md',
+    keywords: ['trusted', 'easy', 'adaptable', 'well-architected', 'secure', 'reliable', 'compliant', 'composable', 'scalable', 'architecture'],
+  },
+  {
+    file: 'cross-cutting/sf-bedrock-patterns.md',
+    keywords: ['queueable', 'async', 'platform event', 'eventbus', 'trigger handler', 'retry', 'background', 'scheduled apex', 'future method'],
+  },
 ];
 
 const _fileCache = new Map<string, string>();
