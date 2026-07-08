@@ -128,6 +128,8 @@ function parseVerdictForADR(content: string): string {
     return "APPROVED WITH CONDITIONS";
   if (u.includes("REVISION REQUIRED") || u.includes("REQUIRES REVISION"))
     return "REVISION REQUIRED";
+  if (u.includes("NOT APPROVED"))
+    return "NOT APPROVED";
   if (u.includes("APPROVED"))
     return "APPROVED";
   return "REVIEW REQUIRED";
@@ -421,6 +423,8 @@ export class ForumOrchestrator {
           console.log('[episodic] store size:', Object.keys(episodicStore).length, '| agents:', Object.keys(episodicStore).join(', '));
           yield `data: ${JSON.stringify({ type: "agent_complete", agentId: agent.id, durationMs: Date.now() - agentStart, inputTokens: usage?.inputTokens ?? Math.floor(reviewInput.length / 4), outputTokens: usage?.outputTokens ?? Math.floor(content.length / 4), cacheReadTokens: usage?.cacheReadTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0 })}\n\n`;
           yield `event: token_usage\ndata: ${JSON.stringify({ agent: agent.name, inputTokens: (usage?.inputTokens ?? 0) > 0 ? usage!.inputTokens : Math.floor(800 + Math.random() * 700), outputTokens: (usage?.outputTokens ?? 0) > 0 ? usage!.outputTokens : Math.floor(200 + Math.random() * 300) })}\n\n`;
+          rawSpecialistOutputs.push({ agentName: agent.name, role: agent.role, content });
+          specialistOutputs.push({ agentName: agent.name, role: agent.role, content: stripJsonBlock(content) });
           await tracer.completeAgent({
             inputTokens: usage?.inputTokens,
             outputTokens: usage?.outputTokens,
@@ -428,8 +432,6 @@ export class ForumOrchestrator {
             findingsSummary: extractFindingsSummary(content),
             mustFixCount: extractFindingsSummary(content).filter(f => f.toLowerCase().includes('must-fix') || f.toLowerCase().includes('must fix')).length,
           })
-          rawSpecialistOutputs.push({ agentName: agent.name, role: agent.role, content });
-          specialistOutputs.push({ agentName: agent.name, role: agent.role, content: stripJsonBlock(content) });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
@@ -713,7 +715,7 @@ ${agentOutputsText}`,
       }
       await tracer.finalise({
         verdict: parsedVerdict,
-        overallRisk: parseVerdictForADR(judgeContent).includes('APPROVED') ? 'low' : 'high',
+        overallRisk: parseVerdictForADR(judgeContent) === 'APPROVED' ? 'low' : 'high',
         expectedTokenBudget: Math.floor((totalInputTokens + totalOutputTokens) * 0.9),
         totalCacheReadTokens,
         totalCacheWriteTokens,
