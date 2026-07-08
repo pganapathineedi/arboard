@@ -15,6 +15,7 @@ import { retrieveOrgLearnings } from "@/lib/memory/orgLearningsRetriever";
 import { buildOrgLearningsBlock } from "@/lib/memory/contextInjector";
 import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoader";
 import { SessionTracer } from '@/lib/tracing/SessionTracer'
+import { validateAgentOutput, type ValidationResult } from '@/lib/validation/agentOutputSchema'
 
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
@@ -99,6 +100,11 @@ function buildRevisionInput(requirement: string, round: number, previousFeedback
     "## REQUIREMENT",
     requirement,
   ].join("\n");
+}
+
+function stripJsonBlock(content: string): string {
+  const match = content.match(/^([\s\S]*)\n---\n[\s\S]*```json[\s\S]*```\s*$/);
+  return match ? match[1].trim() : content;
 }
 
 // Scribe and Learner only need requirement + judge verdict — no full specialist debate
@@ -368,6 +374,7 @@ export class ForumOrchestrator {
         ? buildRevisionInput(request.input, request.revisionRound!, request.previousFeedback!)
         : buildReviewInput(request.input, designerOutput);
       const specialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
+      const rawSpecialistOutputs: Array<{ agentName: string; role: string; content: string }> = [];
 
       console.log('[forum] mode at specialist loop:', mode);
       for (const agent of filteredSpecialists) {
@@ -421,12 +428,37 @@ export class ForumOrchestrator {
             findingsSummary: extractFindingsSummary(content),
             mustFixCount: extractFindingsSummary(content).filter(f => f.toLowerCase().includes('must-fix') || f.toLowerCase().includes('must fix')).length,
           })
-          specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
+          rawSpecialistOutputs.push({ agentName: agent.name, role: agent.role, content });
+          specialistOutputs.push({ agentName: agent.name, role: agent.role, content: stripJsonBlock(content) });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           yield `data: ${JSON.stringify({ type: "agent_error", agentId: agent.id, error: message, durationMs: Date.now() - agentStart })}\n\n`;
           await tracer.failAgent(agent.id, message)
-          if (content) specialistOutputs.push({ agentName: agent.name, role: agent.role, content });
+          if (content) {
+            rawSpecialistOutputs.push({ agentName: agent.name, role: agent.role, content });
+            specialistOutputs.push({ agentName: agent.name, role: agent.role, content: stripJsonBlock(content) });
+          }
+        }
+      }
+
+      // ── Specialist output validation (non-blocking, soft) ─────────────────
+      const validationResults: ValidationResult[] = [];
+      if (mode === "real" && rawSpecialistOutputs.length > 0) {
+        try {
+          const validations = await Promise.all(
+            rawSpecialistOutputs.filter(s => s.agentName !== 'sf-judge').map(s => validateAgentOutput(s.agentName, s.content))
+          );
+          for (const r of validations) {
+            validationResults.push(r);
+            if (!r.valid) {
+              console.warn(`[validation] "${r.agent_name}" failed schema validation:`, r.errors);
+            }
+          }
+          const passed = validationResults.filter(r => r.valid).length;
+          yield `event: validation_summary\ndata: ${JSON.stringify({ total: validationResults.length, passed, failed: validationResults.length - passed, results: validationResults })}\n\n`;
+          tracer.recordValidationSummary(sessionId, validationResults);
+        } catch (err) {
+          console.error("[orchestrator] Validation summary failed:", err instanceof Error ? err.message : err);
         }
       }
 
@@ -461,7 +493,7 @@ export class ForumOrchestrator {
         let agentContent = "";
         let usage: UsageData | undefined;
         const agentStart = Date.now();
-        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent };
+        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent, skipInputValidation: true };
         if (request.embeddedImages?.length) closingMeta.embeddedImages = request.embeddedImages;
         try {
           for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, closingMeta, mode)) {
@@ -683,6 +715,8 @@ ${agentOutputsText}`,
         verdict: parsedVerdict,
         overallRisk: parseVerdictForADR(judgeContent).includes('APPROVED') ? 'low' : 'high',
         expectedTokenBudget: Math.floor((totalInputTokens + totalOutputTokens) * 0.9),
+        totalCacheReadTokens,
+        totalCacheWriteTokens,
       })
 
       yield `data: ${JSON.stringify({ type: "adr_saved", jiraIssueKey: null, jiraIssueUrl: null })}\n\n`;

@@ -4,6 +4,7 @@ const MAX_INPUT_LENGTH = 32000;
 const MIN_INPUT_LENGTH = 10;
 
 export const validateInput: MiddlewareFn = async (ctx, next) => {
+  if (ctx.skipInputValidation === true) return next();
   if (!ctx.input || ctx.input.trim().length === 0) {
     throw new Error("Input cannot be empty");
   }

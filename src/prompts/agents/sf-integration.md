@@ -44,3 +44,10 @@ FINDINGS_SUMMARY_END
 
 Severity must be one of: MUST-FIX, HIGH, MEDIUM, LOW
 Keep each finding to one line maximum.
+
+---
+After your analysis, append a JSON block in this exact format with no text after it:
+```json
+{"findings":[{"category":"","severity":"critical|high|medium|low",
+"component":"","recommendation":""}],"overall_risk":"critical|high|medium|low"}
+```

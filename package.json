@@ -23,7 +23,8 @@
     "pdf-parse": "^2.4.5",
     "react": "^18",
     "react-dom": "^18",
-    "unzipper": "^0.12.5"
+    "unzipper": "^0.12.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/jsforce": "^1.11.6",

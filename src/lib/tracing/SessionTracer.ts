@@ -71,6 +71,7 @@ export class SessionTracer {
   private totalOutputTokens: number = 0
   private totalCostUsd: number = 0
   private enabled: boolean = true
+  private validationSummary: unknown[] | null = null
 
   constructor(params: {
     sessionId: string
@@ -244,10 +245,17 @@ export class SessionTracer {
     this.pendingInjections = []
   }
 
+  recordValidationSummary(sessionId: string, validationResults: unknown[]): void {
+    void sessionId
+    this.validationSummary = validationResults
+  }
+
   async finalise(params: {
     verdict?: string
     overallRisk?: string
     expectedTokenBudget?: number
+    totalCacheReadTokens?: number
+    totalCacheWriteTokens?: number
   }): Promise<void> {
     if (!this.enabled) return
     const wallClockMs = Date.now() - this.sessionStart
@@ -268,9 +276,12 @@ export class SessionTracer {
       overallRisk: params.overallRisk,
       totalInputTokens: this.totalInputTokens,
       totalOutputTokens: this.totalOutputTokens,
+      totalCacheReadTokens: params.totalCacheReadTokens ?? 0,
+      totalCacheWriteTokens: params.totalCacheWriteTokens ?? 0,
       totalCostUsd: this.totalCostUsd,
       wallClockMs,
       generatedAt: new Date().toISOString(),
+      validationSummary: this.validationSummary,
     }
 
     const contentHash = createHash('sha256')

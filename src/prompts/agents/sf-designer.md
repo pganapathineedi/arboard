@@ -28,3 +28,10 @@ Example of a weak finding (not acceptable):
 
 Example of a strong finding (required):
 "No error logging or retry logic on REST callouts — matches FP-006 (silent failures) and FP-009 (log and hope). Violates Trusted > Reliable. Consider sf-bedrock EventRelay for durable event handling with built-in retry and dead-letter tracking."
+
+---
+After your analysis, append a JSON block in this exact format with no text after it:
+```json
+{"findings":[{"category":"","severity":"critical|high|medium|low",
+"component":"","recommendation":""}],"overall_risk":"critical|high|medium|low"}
+```

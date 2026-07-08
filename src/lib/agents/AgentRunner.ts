@@ -51,6 +51,7 @@ export class AgentRunner {
     const middlewareCtx: MiddlewareContext = {
       sessionId, agentId: agent.id, domainId,
       input, clientContext, systemPrompt, metadata: metadata ?? {}, orgContext,
+      skipInputValidation: (metadata?.skipInputValidation as boolean | undefined) ?? false,
     };
 
     const finalCtx = await defaultPipeline(middlewareCtx, async () => middlewareCtx);

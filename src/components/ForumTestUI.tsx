@@ -187,12 +187,16 @@ function formatCost(usd: number): string {
 }
 
 function estimateSession(inputText: string, agentCount: number, modelId: ModelId, imageCount = 0) {
-  const reqTokens   = Math.ceil(inputText.length / 4 * 0.73);
-  const sysTokens   = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
-  const inputPerAgent  = reqTokens + sysTokens;
-  const outputPerAgent = 600;
-  const imageTokens = imageCount * 1600 * Math.min(2, agentCount); // sf-patterns and sf-judge receive images
-  const totalInput  = inputPerAgent * agentCount + imageTokens;
+  const reqTokens      = Math.ceil(inputText.length / 4 * 0.73);
+  const sysTokens      = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
+  const outputPerAgent = 800;
+  const baseInput      = reqTokens + sysTokens;
+  const imageTokens    = imageCount * 1600 * Math.min(2, agentCount); // sf-patterns and sf-judge receive images
+
+  // Each agent receives the document plus all prior agent outputs as cumulative context.
+  // Agent i (0-indexed) input = baseInput + outputPerAgent * i
+  // Sum over all agents = agentCount * baseInput + outputPerAgent * (agentCount * (agentCount - 1) / 2)
+  const totalInput  = agentCount * baseInput + outputPerAgent * (agentCount * (agentCount - 1) / 2) + imageTokens;
   const totalOutput = outputPerAgent * agentCount;
   const totalTokens = totalInput + totalOutput;
   const cfg  = MODEL_CONFIG[modelId];
@@ -259,6 +263,11 @@ function parseHumanJudgementPoints(content: string): string[] {
     .map(l => l.replace(/^[-•*]+\s*/, "").trim())
     .filter(l => Boolean(l) && !l.toLowerCase().includes("none identified"))
     .slice(0, 10);
+}
+
+function stripJsonBlock(content: string): string {
+  const match = content.match(/^([\s\S]*)\n---\n[\s\S]*```json[\s\S]*```\s*$/);
+  return match ? match[1].trim() : content;
 }
 
 function getAgentStatus(
@@ -1206,7 +1215,7 @@ function renderTable(rows: string[]): React.ReactNode {
 function MarkdownOutput({ content }: { content: string }) {
   const segments = content.split(/(```[\s\S]*?```)/);
   return (
-    <div style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.7 }}>
+    <div style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.7, overflowWrap: "break-word", wordBreak: "break-word" }}>
       {segments.map((seg, si) => {
         if (seg.startsWith("```")) {
           const match = seg.match(/^```\w*\n?([\s\S]*?)```$/);
@@ -1252,12 +1261,12 @@ function MarkdownOutput({ content }: { content: string }) {
 
 // ── AgentCard ─────────────────────────────────────────────────────────────────
 
-function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?: string }) {
+function AgentCard({ agent, sectionLabel, validationPassed }: { agent: AgentOutput; sectionLabel?: string; validationPassed?: boolean }) {
   const meta = AGENT_META[agent.agentId];
   const conf = agent.complete ? parseConfidence(agent.content) : null;
   const isStreaming = !agent.complete && !agent.error;
   const isDesigner = agent.agentId === "sf-designer";
-  const cleanContent = agent.content.replace(/FINDINGS_SUMMARY_START[\s\S]*?FINDINGS_SUMMARY_END/g, '').trim();
+  const cleanContent = stripJsonBlock(agent.content.replace(/FINDINGS_SUMMARY_START[\s\S]*?FINDINGS_SUMMARY_END/g, '').trim());
 
   const borderColor = agent.error
     ? "#e84040"
@@ -1335,13 +1344,26 @@ function AgentCard({ agent, sectionLabel }: { agent: AgentOutput; sectionLabel?:
           </div>
         )}
 
-        {/* Confidence + time footer */}
+        {/* Confidence + validation footer */}
         {agent.complete && !agent.error && (
           <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
             {conf !== null && (
               <div style={{ marginBottom: 6 }}>
                 <div style={{ ...S.label, marginBottom: 4 }}>Confidence</div>
                 <ConfidenceBar value={conf} />
+              </div>
+            )}
+            {validationPassed !== undefined && (
+              <div style={{ marginTop: conf !== null ? 8 : 0 }}>
+                <span style={{
+                  fontFamily: "monospace", fontSize: 10,
+                  padding: "2px 8px", borderRadius: 4,
+                  background: validationPassed ? "rgba(15,186,122,0.12)" : "rgba(232,64,64,0.12)",
+                  color: validationPassed ? "#0fba7a" : "#e84040",
+                  border: `1px solid ${validationPassed ? "rgba(15,186,122,0.3)" : "rgba(232,64,64,0.3)"}`,
+                }}>
+                  {validationPassed ? "✓ Schema validated" : "✗ Schema invalid"}
+                </span>
               </div>
             )}
           </div>
@@ -1659,7 +1681,7 @@ function SessionSummaryDrawer({
 }) {
   const tokenDiffPct = Math.round(((actualTokens - estimate.totalTokens) / estimate.totalTokens) * 100);
   const costDiffPct  = Math.round(((actualCost  - estimate.cost)         / estimate.cost)         * 100);
-  const accurate = Math.abs(tokenDiffPct) <= 20;
+  const accurate = Math.abs(tokenDiffPct) <= 20 && Math.abs(costDiffPct) <= 20;
 
   const useReal = agents.some(a => a.outputTokens !== undefined);
   const maxTokens = Math.max(...agents
@@ -1690,7 +1712,7 @@ function SessionSummaryDrawer({
             { label: "Total Time",    value: formatDuration(totalMs),      sub: null,                                        color: "#F0F4FF" },
             { label: "Total Tokens",  value: `${(actualTokens / 1000).toFixed(1)}k`, sub: `est. was ${(estimate.totalTokens / 1000).toFixed(0)}k`, color: "#F0F4FF" },
             { label: "Actual Cost",   value: formatCost(actualCost),       sub: `est. was ${formatCost(estimate.cost)}`,     color: "#00c8f0" },
-            { label: "Accuracy",      value: accurate ? "✓ within 20%" : `${tokenDiffPct > 0 ? "+" : ""}${tokenDiffPct}% off`, sub: null,       color: "#F0F4FF" },
+            { label: "Accuracy",      value: accurate ? "✓ within 20%" : `tokens ${tokenDiffPct > 0 ? "+" : ""}${tokenDiffPct}% · cost ${costDiffPct > 0 ? "+" : ""}${costDiffPct}% off`, sub: null,       color: "#F0F4FF" },
           ].map(item => (
             <div key={item.label} style={{ ...S.card, padding: "12px 14px" }}>
               <div style={{ ...S.label, marginBottom: 4 }}>{item.label}</div>
@@ -1720,7 +1742,7 @@ function SessionSummaryDrawer({
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {agents.filter(a => a.complete && !a.error).map(a => {
             const meta = AGENT_META[a.agentId];
-            if (a.skipped) {
+            if (a.skipped && (a.outputTokens ?? 0) === 0) {
               return (
                 <div key={a.agentId} style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.4 }}>
                   <span style={{ fontFamily: "monospace", fontSize: 11, color: "#F0F4FF", width: 80, flexShrink: 0 }}>
@@ -1728,10 +1750,10 @@ function SessionSummaryDrawer({
                   </span>
                   <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.04)", borderRadius: 3 }} />
                   <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 70, textAlign: "right", flexShrink: 0 }}>
-                    skipped
+                    -
                   </span>
                   <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", width: 40, textAlign: "right", flexShrink: 0 }}>
-                    —
+                    Skipped
                   </span>
                 </div>
               );
@@ -1930,6 +1952,7 @@ export default function ForumTestUI() {
   const [pendingEndorsement, setPendingEndorsement]   = useState<PendingEndorsement | null>(null);
   const [tokenUsage, setTokenUsage]                   = useState<{ agent: string; input: number; output: number }[]>([]);
   const [dissentData, setDissentData]                 = useState<DissentData | null>(null);
+  const [validationMap, setValidationMap]             = useState<Record<string, boolean>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -2294,6 +2317,11 @@ export default function ForumTestUI() {
             if (pendingEvent === "token_usage") {
               const d = JSON.parse(line.slice(6)) as { agent: string; inputTokens: number; outputTokens: number };
               setTokenUsage(prev => [...prev, { agent: d.agent, input: d.inputTokens, output: d.outputTokens }]);
+            } else if (pendingEvent === "validation_summary") {
+              const d = JSON.parse(line.slice(6)) as { results: Array<{ agent_name: string; valid: boolean }> };
+              const map: Record<string, boolean> = {};
+              for (const r of d.results) map[r.agent_name] = r.valid;
+              setValidationMap(map);
             } else {
               handleEvent(JSON.parse(line.slice(6)) as SSEEvent);
             }
@@ -2333,6 +2361,7 @@ export default function ForumTestUI() {
     setPendingEndorsement(null);
     setTokenUsage([]);
     setDissentData(null);
+    setValidationMap({});
     setUploadResult(null);
     setUploading(false);
     setUploadError(null);
@@ -2934,7 +2963,7 @@ export default function ForumTestUI() {
                     return (
                       <div key={agent.agentId}>
                         {sectionLabel && <SectionDivider label={sectionLabel} />}
-                        <AgentCard agent={agent} />
+                        <AgentCard agent={agent} validationPassed={validationMap[agent.agentName]} />
                         <div style={{ height: 12 }} />
                       </div>
                     );

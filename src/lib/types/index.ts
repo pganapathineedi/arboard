@@ -110,6 +110,7 @@ export interface MiddlewareContext {
   systemPrompt: string;
   metadata: Record<string, unknown>;
   orgContext?: import("@/lib/types/salesforce").OrgContext;
+  skipInputValidation?: boolean;
 }
 
 export type MiddlewareFn = (
