@@ -2231,7 +2231,7 @@ export default function ForumTestUI() {
       console.log("analyzeImpact sending:", textToAnalyse.substring(0, 200));
       const res = await fetch("/api/analyse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-arboard-key": process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? "" },
         body: JSON.stringify({ input: textToAnalyse, mode: apiMode }),
       });
       if (!res.ok) throw new Error("Analysis failed");
