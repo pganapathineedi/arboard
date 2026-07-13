@@ -11,8 +11,6 @@ import { estimateCostUsd } from "@/lib/pricing";
 import { retrieveMemory, buildAllAgentMemoryBlocks } from "@/lib/memory";
 import { persistLearnerOutput } from "@/lib/memory/learnerPersist";
 import { fetchTicket } from "@/lib/integrations/jira";
-import { retrieveOrgLearnings } from "@/lib/memory/orgLearningsRetriever";
-import { buildOrgLearningsBlock } from "@/lib/memory/contextInjector";
 import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoader";
 import { SessionTracer } from '@/lib/tracing/SessionTracer'
 import { validateAgentOutput, type ValidationResult } from '@/lib/validation/agentOutputSchema'
@@ -247,18 +245,18 @@ export class ForumOrchestrator {
       }
     }
 
-    // ── Org learnings injection ───────────────────────────────────────────────
-    const orgLearningRows = await retrieveOrgLearnings(domainId);
-    const orgLearningsBlock = buildOrgLearningsBlock(orgLearningRows);
-    console.log(`[org-learnings] retrieved ${orgLearningRows.length} rows for domain ${domainId}`);
-    if (orgLearningsBlock) {
-      for (const agent of domain.agents) {
-        memoryBlocks[agent.id] = memoryBlocks[agent.id]
-          ? memoryBlocks[agent.id] + '\n\n' + orgLearningsBlock
-          : orgLearningsBlock;
-      }
-      console.log(`[forum] Injected org learnings block (${orgLearningRows.length} rows) for domain ${domainId}`);
-    }
+    // SUPERSEDED BY RAG — org learnings now in grounding_embeddings
+    // const orgLearningRows = await retrieveOrgLearnings(domainId);
+    // const orgLearningsBlock = buildOrgLearningsBlock(orgLearningRows);
+    // console.log(`[org-learnings] retrieved ${orgLearningRows.length} rows for domain ${domainId}`);
+    // if (orgLearningsBlock) {
+    //   for (const agent of domain.agents) {
+    //     memoryBlocks[agent.id] = memoryBlocks[agent.id]
+    //       ? memoryBlocks[agent.id] + '\n\n' + orgLearningsBlock
+    //       : orgLearningsBlock;
+    //   }
+    //   console.log(`[forum] Injected org learnings block (${orgLearningRows.length} rows) for domain ${domainId}`);
+    // }
 
     // ── Prior ADR injection ───────────────────────────────────────────────────
     let priorADRBlock: string | null = null;

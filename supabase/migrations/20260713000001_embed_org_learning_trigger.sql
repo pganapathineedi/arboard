@@ -1,0 +1,12 @@
+-- Auto-embedding org_learnings on insert is NOT implementable as a pure SQL trigger.
+-- Calling the Voyage AI embeddings API (https://api.voyageai.com/v1/embeddings) requires
+-- an outbound HTTP request, which cannot be made from a PostgreSQL trigger function.
+--
+-- Options for production automation:
+--   1. Supabase Edge Function triggered via pg_net or a database webhook on INSERT/UPDATE
+--      to org_learnings — the function calls Voyage AI and upserts into grounding_embeddings.
+--   2. Application-level hook: after persisting a new org_learning row, the server
+--      immediately calls the Voyage API and upserts the embedding inline.
+--
+-- In the meantime, run src/scripts/seedOrgLearnings.ts manually after bulk inserts:
+--   npx tsx --env-file=.env.local src/scripts/seedOrgLearnings.ts
