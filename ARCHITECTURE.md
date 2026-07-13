@@ -38,15 +38,17 @@ Specialist agents run sequentially. Each receives the SDD, a domain-specific sys
 | sf-apex | Apex code | Governor limits, async patterns |
 | sf-lwc | LWC | Component design, performance |
 | sf-flow | Flow | Bulkification, error handling |
-| sf-omniStudio | OmniStudio | Vlocity best practices |
+| sf-omni | OmniStudio | Vlocity best practices |
 | sf-integration | Integration | API design, error recovery |
 | sf-patterns | Architecture patterns | Anti-patterns, technical debt |
 | sf-data | Data architecture | Data model, sharing model |
+| sf-agentforce | Agentforce | Topic design, ETL, escalation, licensing |
+| sf-profiles-permissions | Profiles & Permissions | OWD/sharing, FLS, guest user, PSG architecture |
 | sf-judge | Judge | Cross-agent synthesis, binding verdict |
 
 Supporting agents: `sf-scribe` (ADR formatting), `sf-learner` (org intelligence capture).
 
-Agent selection is dynamic: `ImpactAnalyser` scores the SDD against each agent's domain keywords and activates only relevant specialists. `sf-judge`, `sf-scribe`, and `sf-learner` are always-on.
+Agent selection is dynamic: `ImpactAnalyser` scores the SDD against each agent's `skillKeywords` in `agentManifest.json` and activates only relevant specialists. `sf-judge`, `sf-scribe`, and `sf-learner` are always-on (`alwaysInclude: true`).
 
 ---
 
@@ -175,7 +177,7 @@ Supabase session telemetry (sessions + signoffs tables)
 
 | Table | Purpose |
 |---|---|
-| `failure_patterns` | SI failure pattern library (FP-004 → FP-020), domain-tagged |
+| `failure_patterns` | SI failure pattern library. Cross-domain: FP-004–FP-020. Agent-scoped: PERM-001–PERM-008 (sf-profiles-permissions). Append-only — IDs referenced in past ADRs. |
 | `grounding_embeddings` | Unified RAG store (voyage-code-3, 1024-dim). content_type values: `skill`, `failure_pattern` (from seedEmbeddings.ts), `org_learning` (from seedOrgLearnings.ts + learnerPersist.ts auto-embed), `jira_adr` (from seedJiraADRs.ts + createADRIssue auto-embed) |
 | `org_learnings` | Cross-session learnings captured by sf-learner — source of truth; embeddings mirrored into grounding_embeddings |
 | `sessions` | Session telemetry — tokens, cost, duration, model, agent count |
@@ -206,6 +208,13 @@ src/scripts/seedJiraADRs.ts         — all real ADRs from Jira project ARBOARD
          ↓ extractADFText() → plain text, truncated to 8000 chars
          ↓ Voyage AI voyage-code-3
          ↓ grounding_embeddings (content_type: jira_adr, source_id: jira_adr_{key})
+
+scripts/seed-perm-patterns.ts       — PERM-001–PERM-008 (Profiles & Permissions patterns)
+  permFailurePatterns[]
+         ↓ upsert → failure_patterns (onConflict: id)
+         ↓ Voyage AI voyage-code-3 (title + scenario + better_path combined)
+         ↓ grounding_embeddings (content_type: failure_pattern, source_id: PERM-00X)
+  Run: npm run seed:perm-patterns
 ```
 
 **Auto-embed hooks** (fire-and-forget, run on every session):
@@ -231,11 +240,15 @@ At query time `ragRetriever.ts` embeds the SDD (`input_type: query`) and runs pg
 
 ```
 src/
+  config/
+    agentManifest.json           — agent registry: IDs, names, skillKeywords, enabled flags
   lib/
     orchestrator/
       ForumOrchestrator.ts       — main session orchestration, grounding assembly
     agents/
       AgentRunner.ts             — per-agent execution, failure pattern injection, prompt caching
+    config/
+      manifestLoader.ts          — reads agentManifest.json, filters enabled agents
     rag/
       ragRetriever.ts            — Voyage AI embed → pgvector similarity search
     skills/
@@ -246,11 +259,17 @@ src/
       orgLearningsRetriever.ts   — Supabase org learnings fetch [SUPERSEDED BY RAG]
     patternRetrieval.ts          — Supabase failure pattern fetch + formatting
     analysis/
-      ImpactAnalyser.ts          — agent selection scoring
+      ImpactAnalyser.ts          — agent selection scoring (reads skillKeywords from manifest)
     supabase/
       client.ts                  — lazy singleton Supabase client
+    domains/
+      salesforce/
+        index.ts                 — domain config, _agentLookup, getEnabledAgents() wiring
+        agents/                  — one .ts file per agent (createBaseAgent + _sec() prompt parser)
+  prompts/
+    agents/                      — per-agent system prompt .md files (## Role/Expertise/Guardrails/…)
   skills/
-    domains/                     — per-agent review checklists (.md)
+    domains/                     — per-agent grounding knowledge (.md)
     cross-cutting/               — keyword-triggered architecture skills (.md)
     failure-patterns.md          — SI failure pattern source (chunked for RAG)
   scripts/
@@ -260,6 +279,8 @@ src/
   app/
     api/
       forum/route.ts             — streaming API entry point
+scripts/                         — root-level one-off seed scripts (agent-scoped pattern seeders)
+  seed-perm-patterns.ts          — seeds PERM-001–PERM-008 into failure_patterns + grounding_embeddings
 supabase/
   migrations/                    — schema migrations
 ```
