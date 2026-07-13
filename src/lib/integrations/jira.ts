@@ -1,3 +1,5 @@
+import { getSupabaseClient } from '@/lib/supabase/client';
+
 export interface JiraIssueParams {
   requirement: string;
   verdict: string;
@@ -418,6 +420,40 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
         body: JSON.stringify(commentBody),
       }).catch(err => { console.warn('[jira] human judgement comment failed:', err); });
     }
+
+    // Fire-and-forget: embed the new ADR into grounding_embeddings
+    void (async () => {
+      try {
+        const descriptionPlainText = extractADFText(buildADF(params));
+        const chunkText = `${summary}\n\n${descriptionPlainText}`.slice(0, 8000);
+        const voyageRes = await fetch('https://api.voyageai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ input: [chunkText], model: 'voyage-code-3', input_type: 'document' }),
+        });
+        if (!voyageRes.ok) throw new Error(`Voyage API ${voyageRes.status}: ${await voyageRes.text()}`);
+        const voyageJson = (await voyageRes.json()) as { data: { embedding: number[] }[] };
+        const sb = getSupabaseClient();
+        if (!sb) throw new Error('Supabase client unavailable');
+        const { error: upsertErr } = await sb.from('grounding_embeddings').upsert(
+          {
+            source_id: `jira_adr_${data.key}`,
+            content_type: 'jira_adr',
+            chunk_text: chunkText,
+            metadata: { key: data.key, summary },
+            embedding: voyageJson.data[0].embedding,
+          },
+          { onConflict: 'source_id' },
+        );
+        if (upsertErr) throw new Error(upsertErr.message);
+        console.log(`[jira-adr] auto-embedded: ${data.key}`);
+      } catch (embedErr) {
+        console.error('[jira-adr] auto-embed failed:', embedErr instanceof Error ? embedErr.message : embedErr);
+      }
+    })();
 
     return { issueKey: data.key, issueUrl: `https://${domain}/browse/${data.key}` };
   } finally {

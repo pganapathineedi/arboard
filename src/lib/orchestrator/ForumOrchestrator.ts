@@ -224,12 +224,12 @@ export class ForumOrchestrator {
       return `\n\n## PRIOR AGENT FINDINGS\nThe following specialists have already reviewed this document. Factor their findings into your assessment — do not repeat findings already flagged, instead build on them or cross-reference where relevant.\n\n${lines.join('\n')}`;
     }
 
-    // ── Memory retrieval ──────────────────────────────────────────────────────
-    const memory = await retrieveMemory(request.input, process.env.CLIENT_ID ?? 'default');
-    const memoryBlocks = buildAllAgentMemoryBlocks(memory);
-    if (memory.relevantADRs.length > 0) {
-      console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
-    }
+    // SUPERSEDED BY RAG — Jira ADRs now in grounding_embeddings
+    // const memory = await retrieveMemory(request.input, process.env.CLIENT_ID ?? 'default');
+    // if (memory.relevantADRs.length > 0) {
+    //   console.log(`[forum] Loaded ${memory.relevantADRs.length} relevant past ADRs from Jira`);
+    // }
+    const memoryBlocks: Record<string, string> = {};
 
     // ── Skills injection ──────────────────────────────────────────────────────
     const documentText = request.input;
