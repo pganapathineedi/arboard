@@ -177,7 +177,7 @@ Supabase session telemetry (sessions + signoffs tables)
 
 | Table | Purpose |
 |---|---|
-| `failure_patterns` | SI failure pattern library. Cross-domain: FP-004–FP-020. Agent-scoped: PERM-001–PERM-008 (sf-profiles-permissions). Append-only — IDs referenced in past ADRs. |
+| `failure_patterns` | SI failure pattern library. Agent-scoped sources: FP-004–FP-012 (`sf-patterns`), FP-013–FP-020 (`sf-agentforce`), PERM-001–PERM-008 (`sf-profiles-permissions`). Append-only — IDs referenced in past ADRs. |
 | `grounding_embeddings` | Unified RAG store (voyage-code-3, 1024-dim). content_type values: `skill`, `failure_pattern` (from seedEmbeddings.ts), `org_learning` (from seedOrgLearnings.ts + learnerPersist.ts auto-embed), `jira_adr` (from seedJiraADRs.ts + createADRIssue auto-embed) |
 | `org_learnings` | Cross-session learnings captured by sf-learner — source of truth; embeddings mirrored into grounding_embeddings |
 | `sessions` | Session telemetry — tokens, cost, duration, model, agent count |
@@ -215,6 +215,26 @@ scripts/seed-perm-patterns.ts       — PERM-001–PERM-008 (Profiles & Permissi
          ↓ Voyage AI voyage-code-3 (title + scenario + better_path combined)
          ↓ grounding_embeddings (content_type: failure_pattern, source_id: PERM-00X)
   Run: npm run seed:perm-patterns
+
+scripts/seed-agentforce-patterns.ts — FP-013–FP-020 (Agentforce patterns)
+  agentforceFailurePatterns[]
+         ↓ upsert → failure_patterns (onConflict: id)
+         ↓ Voyage AI voyage-code-3 (title + scenario + better_path combined)
+         ↓ grounding_embeddings (content_type: failure_pattern, source_id: FP-0XX)
+  Run: npm run seed:agentforce-patterns
+```
+
+**Generic per-agent seeder** (primary workflow for new agents):
+
+```
+scripts/seed-agent.ts               — seeds ONE agent's skill file + failure patterns
+  Usage: npm run seed:agent -- <agent-id>
+  1. Reads agent entry from src/config/agentManifest.json
+  2. Resolves src/skills/domains/[entry.file].md — chunks by H2, embeds each chunk
+     → grounding_embeddings (content_type: skill, source_id: [agentId]-[chunkIndex])
+  3. Queries failure_patterns WHERE source = agentId — embeds each pattern
+     → grounding_embeddings (content_type: failure_pattern, source_id: pattern.id)
+  Run after: creating/updating a skill file OR seeding new failure patterns for an agent
 ```
 
 **Auto-embed hooks** (fire-and-forget, run on every session):
@@ -279,8 +299,11 @@ src/
   app/
     api/
       forum/route.ts             — streaming API entry point
-scripts/                         — root-level one-off seed scripts (agent-scoped pattern seeders)
+scripts/                         — root-level seed scripts (agent-scoped pattern seeders + generic seeder)
+  seed-agent.ts                  — generic per-agent seeder: skill file chunks + failure patterns (primary workflow)
   seed-perm-patterns.ts          — seeds PERM-001–PERM-008 into failure_patterns + grounding_embeddings
+  seed-agentforce-patterns.ts    — seeds FP-013–FP-020 into failure_patterns + grounding_embeddings
+  update-fp-sources.ts           — one-off migration: sets source field on FP-004–FP-020 to agent IDs
 supabase/
   migrations/                    — schema migrations
 ```

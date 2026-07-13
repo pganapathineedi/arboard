@@ -179,12 +179,14 @@ import { myAgent } from "./agents/myagent";
 
 ### Step 5 — Create the skill file
 
-Create `src/skills/domains/sf-myagent.md` (see [Adding or updating skill files](#adding-or-updating-skill-files)).
+Create `src/skills/domains/myagent.md` (no `sf-` prefix — must match the manifest `file` field). See [Adding or updating skill files](#adding-or-updating-skill-files) for structure guidance.
 
-After creating the skill file, re-run the embedder so it's retrievable via RAG:
+After creating the skill file, seed it into `grounding_embeddings`:
 ```bash
-npx tsx --env-file=.env.local src/scripts/seedEmbeddings.ts
+npm run seed:agent -- sf-myagent
 ```
+
+This embeds all H2 sections of the skill file and any failure patterns in the database with `source = "sf-myagent"`.
 
 ### Step 6 — Test locally
 
@@ -209,41 +211,43 @@ src/skills/
 
 ### Format requirements
 
-Every skill file must follow this structure:
+Skill files use free-form H2 sections organised by topic. Use `src/skills/domains/agentforce.md` or `src/skills/domains/data.md` as reference implementations. The only two required sections are:
 
 ```markdown
-# [Skill area name]
+## MANDATORY CHECK LIST
+- [ ] [Non-negotiable check before submitting findings]
 
-## Overview
-[2-3 sentences describing what this skill covers]
-
-## Mandatory checklist
-- [ ] [Check 1] — **CRITICAL**
-- [ ] [Check 2] — **HIGH**
-- [ ] [Check 3] — **MEDIUM**
-
-## Key patterns
-[Content organised by topic]
-
-## Anti-patterns
-[What to flag as findings]
+## SEVERITY RUBRIC
+| Severity | Criteria |
+|---|---|
+| CRITICAL | [Agent-specific example] |
+| HIGH     | [Agent-specific example] |
+| MEDIUM   | [Agent-specific example] |
+| LOW      | [Agent-specific example] |
 ```
 
+Between these anchors, organise content into H2 sections by topic (e.g. `## Core design principles`, `## LDV patterns`, `## Common failure modes in SI delivery`). Each H2 section becomes one RAG chunk — keep sections focused so the retriever can return precise context. Aim for 8–12 sections total.
+
 **Severity rubric:**
-- `CRITICAL` — blocks go-live, data loss or security risk
-- `HIGH` — must fix before go-live, significant risk
-- `MEDIUM` — should fix, technical debt or performance risk
-- `LOW` — best practice, advisory only
+- `CRITICAL` — security vulnerability, data loss, or compliance breach; blocks go-live
+- `HIGH` — significant production risk; must fix before go-live
+- `MEDIUM` — technical debt or architectural drift; fix within current release
+- `LOW` — best practice deviation; low immediate risk
 
 ### After updating a skill file
 
-Skill files are embedded into `grounding_embeddings` via Voyage AI. After updating any skill file, re-run the seeder:
+Skill files are embedded into `grounding_embeddings` via Voyage AI. After creating or updating any agent skill file, re-seed it:
 
+```bash
+npm run seed:agent -- sf-myagent
+```
+
+This re-embeds all H2 chunks for that agent (upserts on `source_id`, so existing chunks are updated in place). If you skip this step, your updated content won't be retrieved semantically.
+
+To re-seed all skill files at once (e.g. after a bulk update), use:
 ```bash
 npx tsx --env-file=.env.local src/scripts/seedEmbeddings.ts
 ```
-
-This keeps the RAG retrieval layer current. If you skip this step, your updated content won't be retrieved semantically.
 
 ---
 
@@ -278,16 +282,19 @@ const patterns = [
 ];
 ```
 
-Then upsert into both `failure_patterns` (for pattern injection in AgentRunner) and `grounding_embeddings` (for RAG retrieval). Add an npm script to `package.json`:
+Then upsert into `failure_patterns`. Add an npm script to `package.json`:
 
 ```json
 "seed:myagent-patterns": "npx ts-node --project tsconfig.json scripts/seed-myagent-patterns.ts"
 ```
 
-Run it:
+Run the pattern seed first, then run `seed:agent` to embed them into `grounding_embeddings`:
 ```bash
-VOYAGE_API_KEY=... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:myagent-patterns
+npm run seed:myagent-patterns   # inserts rows into failure_patterns
+npm run seed:agent -- sf-myagent  # embeds skill file + failure patterns into grounding_embeddings
 ```
+
+`seed:agent` queries `failure_patterns WHERE source = agentId` — so the pattern seed must run before the embed step.
 
 ### `failure_patterns` table schema
 
@@ -308,10 +315,10 @@ VOYAGE_API_KEY=... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:m
 
 ### Update the reference skill file
 
-After adding patterns, add entries to the relevant skill file (`src/skills/domains/sf-myagent.md` or `src/skills/failure-patterns.md`) and re-run the embedder:
+After adding patterns, add entries to the relevant skill file (`src/skills/domains/myagent.md` or `src/skills/failure-patterns.md`) and re-seed:
 
 ```bash
-npx tsx --env-file=.env.local src/scripts/seedEmbeddings.ts
+npm run seed:agent -- sf-myagent
 ```
 
 ---
@@ -349,8 +356,8 @@ Before opening a PR, confirm all of the following:
 
 - [ ] `npx tsc --noEmit` passes with zero errors
 - [ ] Tested locally with a live NovaPeak session — no regressions in existing agent output
-- [ ] If skill files were changed — `seedEmbeddings.ts` has been re-run
-- [ ] If a new failure pattern was added — added to both Supabase and `patterns.md`
+- [ ] If skill files were changed — `npm run seed:agent -- <agent-id>` has been run
+- [ ] If a new failure pattern was added — seed script run (`seed:myagent-patterns`), then `seed:agent` run to embed
 - [ ] If a new agent was added — manifest entry (`agentManifest.json`), prompt file (`src/prompts/agents/`), agent config TS (`src/lib/domains/salesforce/agents/`), registered in `salesforce/index.ts`, and skill file (`src/skills/domains/`) all present
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
