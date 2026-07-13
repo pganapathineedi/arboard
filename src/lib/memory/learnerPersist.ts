@@ -74,7 +74,7 @@ export async function persistLearnerOutput(
       return;
     }
 
-    const { error } = await sb.from("org_learnings").insert(rows);
+    const { data: insertedRows, error } = await sb.from("org_learnings").insert(rows).select('id, content, domain, learning_type, context_key, context_value');
     if (error) {
       console.error("[learner-persist] insert error:", error.message);
       return;
@@ -89,6 +89,44 @@ export async function persistLearnerOutput(
     console.log(
       `[learner-persist] saved ${rows.length} learnings (${counts.new} new, ${counts.confirmed} confirmed, ${counts.anti} anti-patterns, ${counts.ctx} context updates) for session ${sessionId}`,
     );
+
+    // Fire-and-forget: embed each new org learning into grounding_embeddings
+    void (async () => {
+      if (!insertedRows?.length) return;
+      for (const row of insertedRows) {
+        try {
+          const res = await fetch('https://api.voyageai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ input: [row.content], model: 'voyage-code-3', input_type: 'document' }),
+          });
+          if (!res.ok) throw new Error(`Voyage API ${res.status}: ${await res.text()}`);
+          const json = (await res.json()) as { data: { embedding: number[] }[] };
+          const { error: upsertErr } = await sb.from('grounding_embeddings').upsert(
+            {
+              source_id: `org_learning_${row.id}`,
+              content_type: 'org_learning',
+              chunk_text: row.content,
+              metadata: {
+                domain: row.domain,
+                learning_type: row.learning_type,
+                context_key: row.context_key,
+                context_value: row.context_value,
+              },
+              embedding: json.data[0].embedding,
+            },
+            { onConflict: 'source_id' },
+          );
+          if (upsertErr) throw new Error(upsertErr.message);
+          console.log(`[org-learning] auto-embedded: ${row.id} — ${row.learning_type}`);
+        } catch (embedErr) {
+          console.error(`[org-learning] auto-embed failed for ${row.id}:`, embedErr instanceof Error ? embedErr.message : embedErr);
+        }
+      }
+    })();
   } catch (err) {
     console.error("[learner-persist] parse/insert failed:", err instanceof Error ? err.message : err);
   }
