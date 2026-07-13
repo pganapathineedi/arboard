@@ -215,10 +215,11 @@ function parseConfidence(content: string): number | null {
   return m ? Math.min(100, Math.max(0, parseInt(m[1]))) : null;
 }
 
-function parseVerdict(content: string): "approved" | "conditional" | "revision" | null {
+function parseVerdict(content: string): "approved" | "conditional" | "not_approved" | "revision" | null {
   const u = content.toUpperCase();
   if (u.includes("APPROVED WITH CONDITIONS") || u.includes("APPROVE WITH CONDITIONS") || u.includes("CONDITIONALLY APPROVED")) return "conditional";
   if (u.includes("REVISION REQUIRED") || u.includes("REQUIRES REVISION"))            return "revision";
+  if (u.includes("NOT APPROVED"))                                                      return "not_approved";
   if (u.includes("APPROVED"))                                                          return "approved";
   return null;
 }
@@ -1387,7 +1388,7 @@ function VerdictBox({
   sessionId, jiraIssueKey, signOff, onCountersign, matchedPatterns,
   revisionRound, onRevisionRound, hideSignOff, onDownload,
 }: {
-  verdict: "approved" | "conditional" | "revision";
+  verdict: "approved" | "conditional" | "not_approved" | "revision";
   judgeContent: string;
   agents: AgentOutput[];
   sessionStartTime: number | null;
@@ -1415,9 +1416,10 @@ function VerdictBox({
   console.log("[VerdictBox] parsed confidenceLevel:", confidenceLevel, "| judgementPoints:", judgementPoints.length, judgementPoints);
 
   const colors = {
-    approved:    { border: "#0fba7a", bg: "rgba(15,186,122,0.06)", icon: "✓", label: "APPROVED",                text: "#0fba7a" },
-    conditional: { border: "#f0a020", bg: "rgba(240,160,32,0.06)", icon: "✓", label: "APPROVED WITH CONDITIONS", text: "#f0a020" },
-    revision:    { border: "#e84040", bg: "rgba(232,64,64,0.06)",  icon: "↻", label: "REVISION REQUIRED",       text: "#e84040" },
+    approved:     { border: "#0fba7a", bg: "rgba(15,186,122,0.06)", icon: "✓", label: "APPROVED",                text: "#0fba7a" },
+    conditional:  { border: "#f0a020", bg: "rgba(240,160,32,0.06)", icon: "✓", label: "APPROVED WITH CONDITIONS", text: "#f0a020" },
+    not_approved: { border: "#e84040", bg: "rgba(232,64,64,0.06)",  icon: "✗", label: "NOT APPROVED",            text: "#e84040" },
+    revision:     { border: "#e84040", bg: "rgba(232,64,64,0.06)",  icon: "↻", label: "REVISION REQUIRED",       text: "#e84040" },
   }[verdict];
 
   const confidenceConfig = confidenceLevel ? {

@@ -672,7 +672,7 @@ ${agentOutputsText}`,
             });
 
             const rawText = response.content[0]?.type === "text" ? response.content[0].text : "{}";
-            const raw = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+            const raw = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             try {
               dissentPayload = JSON.parse(raw);
             } catch (parseErr) {
