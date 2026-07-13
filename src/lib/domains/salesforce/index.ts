@@ -1,4 +1,4 @@
-import type { DomainConfig } from "@/lib/types";
+import type { AgentConfig, DomainConfig } from "@/lib/types";
 import { designerAgent } from "./agents/designer";
 import { lwcAgent } from "./agents/lwc";
 import { omniStudioAgent } from "./agents/omniStudio";
@@ -10,23 +10,32 @@ import { scribeAgent } from "./agents/scribe";
 import { learnerAgent } from "./agents/learner";
 import { integrationAgent } from "./agents/integration";
 import { dataAgent } from "./agents/data";
+import { agentforceAgent } from "./agents/agentforce";
+import { profilesPermissionsAgent } from "./agents/profiles-permissions";
+import { getEnabledAgents } from "@/lib/config/manifestLoader";
+
+const _agentLookup: Record<string, AgentConfig> = {
+  designer: designerAgent,
+  lwc: lwcAgent,
+  omniStudio: omniStudioAgent,
+  flow: flowAgent,
+  apex: apexAgent,
+  patterns: patternsAgent,
+  judge: judgeAgent,
+  scribe: scribeAgent,
+  learner: learnerAgent,
+  integration: integrationAgent,
+  data: dataAgent,
+  agentforce: agentforceAgent,
+  "profiles-permissions": profilesPermissionsAgent,
+};
 
 export const salesforceDomain: DomainConfig = {
   id: "salesforce",
   name: "Salesforce Architecture Review Board",
-  agents: [
-    designerAgent,
-    lwcAgent,
-    omniStudioAgent,
-    flowAgent,
-    apexAgent,
-    patternsAgent,
-    integrationAgent,
-    dataAgent,
-    judgeAgent,
-    scribeAgent,
-    learnerAgent,
-  ],
+  agents: getEnabledAgents()
+    .map((entry) => _agentLookup[entry.file])
+    .filter((a): a is AgentConfig => Boolean(a)),
   complianceRules: [
     "All Apex code must respect governor limits in bulk scenarios (200+ records)",
     "No hardcoded IDs in code or configuration",

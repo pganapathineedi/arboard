@@ -1,0 +1,126 @@
+{
+  "agents": [
+    {
+      "id": "sf-designer",
+      "name": "Solution Designer",
+      "file": "designer",
+      "promptFile": "sf-designer",
+      "keywords": ["design", "architecture", "solution"],
+      "enabled": true
+    },
+    {
+      "id": "sf-lwc",
+      "name": "LWC Specialist",
+      "file": "lwc",
+      "promptFile": "sf-lwc",
+      "keywords": ["LWC", "Lightning Web Component", "component"],
+      "enabled": true
+    },
+    {
+      "id": "sf-omni",
+      "name": "OmniStudio Specialist",
+      "file": "omniStudio",
+      "promptFile": "sf-omni",
+      "keywords": ["OmniStudio", "FlexCard", "OmniScript", "DataRaptor"],
+      "enabled": true
+    },
+    {
+      "id": "sf-flow",
+      "name": "Flow Specialist",
+      "file": "flow",
+      "promptFile": "sf-flow",
+      "keywords": ["Flow", "Process Builder", "automation"],
+      "enabled": true
+    },
+    {
+      "id": "sf-apex",
+      "name": "Apex Specialist",
+      "file": "apex",
+      "promptFile": "sf-apex",
+      "keywords": ["Apex", "trigger", "batch", "queueable"],
+      "enabled": true
+    },
+    {
+      "id": "sf-patterns",
+      "name": "Architecture Patterns Specialist",
+      "file": "patterns",
+      "promptFile": "sf-patterns",
+      "keywords": ["pattern", "anti-pattern", "architecture"],
+      "enabled": true
+    },
+    {
+      "id": "sf-integration",
+      "name": "Integration Architect",
+      "file": "integration",
+      "promptFile": "sf-integration",
+      "keywords": ["integration", "API", "REST", "SOAP", "event", "platform event"],
+      "enabled": true
+    },
+    {
+      "id": "sf-data",
+      "name": "Data Architecture Specialist",
+      "file": "data",
+      "promptFile": "sf-data",
+      "keywords": ["data model", "object", "field", "schema", "relationship"],
+      "enabled": true
+    },
+    {
+      "id": "sf-agentforce",
+      "name": "Agentforce Design Specialist",
+      "file": "agentforce",
+      "promptFile": "sf-agentforce",
+      "keywords": [
+        "Agentforce", "Einstein Copilot", "Agent Studio", "Agent Builder",
+        "Einstein Trust Layer", "Copilot Action", "Agent Action", "Agent Topic",
+        "Prompt Template", "Prompt Builder", "Agentforce for Service", "Agentforce for Sales"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "sf-profiles-permissions",
+      "name": "Profiles & Permissions Specialist",
+      "model": "haiku",
+      "domain": "salesforce",
+      "role": "specialist",
+      "file": "profiles-permissions",
+      "promptFile": "sf-profiles-permissions",
+      "enabled": true,
+      "alwaysInclude": false,
+      "skillKeywords": [
+        "profile", "permission set", "permission sets", "OWD", "org-wide default",
+        "sharing", "FLS", "field level security", "field-level security",
+        "guest user", "experience cloud", "community user", "external user",
+        "role hierarchy", "muting permission", "connected app", "named credential",
+        "user license", "object permissions", "CRUD", "system permissions"
+      ],
+      "description": "Evaluates profiles and permission sets design for internal and external users, including OWD/sharing alignment, FLS completeness, guest user hardening, and permission set group architecture."
+    },
+    {
+      "id": "sf-judge",
+      "name": "Judge",
+      "file": "judge",
+      "promptFile": "sf-judge",
+      "keywords": [],
+      "enabled": true,
+      "alwaysInclude": true
+    },
+    {
+      "id": "sf-scribe",
+      "name": "Scribe",
+      "file": "scribe",
+      "promptFile": "sf-scribe",
+      "keywords": [],
+      "enabled": true,
+      "alwaysInclude": true
+    },
+    {
+      "id": "sf-learner",
+      "name": "Org Intelligence Learner",
+      "file": "learner",
+      "promptFile": "sf-learner",
+      "keywords": [],
+      "enabled": true,
+      "alwaysInclude": true
+    }
+  ]
+}
