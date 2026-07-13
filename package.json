@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed:perm-patterns": "npx ts-node --project tsconfig.json scripts/seed-perm-patterns.ts"
+    "seed:perm-patterns": "npx ts-node --project tsconfig.json scripts/seed-perm-patterns.ts",
+    "seed:agent": "npx ts-node --project tsconfig.json scripts/seed-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
