@@ -235,7 +235,7 @@ export class ForumOrchestrator {
 
     // ── Skills injection ──────────────────────────────────────────────────────
     const documentText = request.input;
-    const crossCuttingSkillsBlock = loadCrossCuttingSkills(documentText);
+    const crossCuttingSkillsBlock = await loadCrossCuttingSkills(documentText);
     for (const agent of domain.agents) {
       const domainSkill = loadDomainSkill(agent.id);
       const skillsBlock = domainSkill + crossCuttingSkillsBlock;
@@ -556,7 +556,7 @@ export class ForumOrchestrator {
           : memoryBlocks[agent.id];
         const effectiveAgent = buildEffectiveAgent(agent, request, closingMemoryWithEpisodic, priorADRBlock);
         const agentInput = buildTrimmedClosingInput(request.input, closingOutputs["sf-judge"] ?? "", priorADRBlock ?? undefined);
-        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent };
+        const closingMeta: Record<string, unknown> = { documentContent: request.documentContent, skipInputValidation: true };
         let agentContent = "";
         try {
           for await (const chunk of AgentRunner.runStream(effectiveAgent, agentInput, clientContext, sessionId, domainId, orgContext, closingMeta, mode)) {
@@ -715,7 +715,7 @@ ${agentOutputsText}`,
       }
       await tracer.finalise({
         verdict: parsedVerdict,
-        overallRisk: parseVerdictForADR(judgeContent) === 'APPROVED' ? 'low' : 'high',
+        overallRisk: parsedVerdict === 'APPROVED' ? 'low' : 'high',
         expectedTokenBudget: Math.floor((totalInputTokens + totalOutputTokens) * 0.9),
         totalCacheReadTokens,
         totalCacheWriteTokens,

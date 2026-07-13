@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { retrieveRelevantChunks } from '../rag/ragRetriever';
 
 const SKILLS_BASE = path.join(process.cwd(), 'src/skills');
 
@@ -11,7 +12,7 @@ const DOMAIN_SKILL_MAP: Record<string, string> = {
   'sf-omni': 'domains/omni.md',
   'sf-data': 'domains/data-integration.md',
   'sf-integration': 'domains/data-integration.md',
-  'sf-patterns': 'domains/apex.md', // patterns agent benefits from apex checklist
+  'sf-patterns': 'domains/patterns.md', // dedicated SI failure patterns checklist FP-004 to FP-020
 };
 
 // Cross-cutting skills — keyword triggered, loaded across multiple agents
@@ -77,7 +78,7 @@ export function loadDomainSkill(agentId: string): string {
   return `\n\n## SPECIALIST REVIEW CHECKLIST\n${content}`;
 }
 
-export function loadCrossCuttingSkills(documentText: string): string {
+export async function loadCrossCuttingSkills(documentText: string): Promise<string> {
   const doc = documentText.toLowerCase();
   const matched: string[] = [];
 
@@ -89,6 +90,11 @@ export function loadCrossCuttingSkills(documentText: string): string {
     }
   }
 
-  if (matched.length === 0) return '';
-  return `\n\n## CROSS-CUTTING ARCHITECTURE SKILLS\n${matched.join('\n\n---\n\n')}`;
+  const base = matched.length === 0 ? '' : `\n\n## CROSS-CUTTING ARCHITECTURE SKILLS\n${matched.join('\n\n---\n\n')}`;
+
+  const ragChunks = await retrieveRelevantChunks(documentText, 5);
+  if (ragChunks.length === 0) return base;
+
+  const ragBlock = ragChunks.map(c => c.chunk_text).join('\n\n---\n\n');
+  return base + `\n\n## Semantically Retrieved Grounding\n${ragBlock}`;
 }
