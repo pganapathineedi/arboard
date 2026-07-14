@@ -48,7 +48,7 @@ Specialist agents run sequentially. Each receives the SDD, a domain-specific sys
 
 Supporting agents: `sf-scribe` (ADR formatting), `sf-learner` (org intelligence capture).
 
-Agent selection is dynamic: `ImpactAnalyser` scores the SDD against each agent's `skillKeywords` in `agentManifest.json` and activates only relevant specialists. `sf-judge`, `sf-scribe`, and `sf-learner` are always-on (`alwaysInclude: true`).
+Agent selection is dynamic: `ImpactAnalyser` scores the SDD against each agent's `keywords` in `agentManifest.json` and activates only relevant specialists. `sf-judge`, `sf-scribe`, and `sf-learner` are always-on (`alwaysInclude: true`).
 
 ---
 
@@ -133,6 +133,11 @@ Anthropic prompt caching (`cache_control: ephemeral`) applied to system prompts 
 
 ### ADR-008 — x-arboard-key header required on all internal API calls
 Every fetch from the frontend to an `/api/*` route must include the header `x-arboard-key: <NEXT_PUBLIC_ARBOARD_API_KEY>`. This is enforced server-side by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`) which reads `ARBOARD_API_KEY` (server-side only — not the public env var). Omitting the header returns 401. All `fetch()` calls in `ForumTestUI.tsx` carry this header — GET calls use a `headers` object, POST calls add it alongside `Content-Type`.
+
+### ADR-010 — LLM abstraction layer (`src/lib/llm/`)
+All Anthropic SDK calls are routed through a `LLMProvider` interface backed by `AnthropicProvider`. Call sites use `getLLMProvider()` from `@/lib/llm` — never `new Anthropic()` directly. Two call patterns: `complete()` (one-shot, returns `{ text, usage }`) and `stream()` (yields string tokens then a terminal `{ __usage: LLMUsage }` sentinel). The `AnthropicProvider` lazy-inits the Anthropic client inside each call — never at module level. Mock-mode guards remain in each call site, above the provider layer. `LLM_PROVIDER` env var selects the implementation; only `anthropic` is currently supported.
+
+Migrated files: `AgentRunner.ts` (streaming), `ImpactAnalyser.ts`, `ForumOrchestrator.ts` (dissent analysis), `DocumentChunker.ts` (summarisation).
 
 ### ADR-009 — Jira Review Queue input mode and Goals pipeline (July 2026)
 A fourth input mode (`"jira"`) allows ARBoard to pull Jira tickets labelled `submitted-for-review` from the ARBOARD project and run them through the full agent pipeline without manual SDD upload. The `GoalOrchestrator` manages the lifecycle: on trigger, it creates a row in the `goals` Supabase table, updates the Jira label to `arb-review-in-progress`, runs the forum pipeline, then sets the label to `arb-reviewed` (or `arb-review-failed` on error). A partial unique index on `goals` prevents duplicate concurrent goals for the same Jira issue. The Jira search API is called via `/rest/api/3/search/jql` (migrated from the legacy `/rest/api/3/search` endpoint).
@@ -312,6 +317,11 @@ src/
   config/
     agentManifest.json           — agent registry: IDs, names, skillKeywords, enabled flags
   lib/
+    llm/
+      index.ts                   — getLLMProvider() factory; re-exports all LLM types
+      LLMProvider.ts             — LLMProvider interface (complete + stream)
+      AnthropicProvider.ts       — Anthropic SDK implementation (lazy client init per call)
+      types.ts                   — LLMMessage, LLMCompleteRequest, LLMStreamRequest, LLMUsage, etc.
     orchestrator/
       ForumOrchestrator.ts       — main session orchestration, grounding assembly
     agents/
@@ -394,4 +404,4 @@ supabase/
 
 ---
 
-*Last updated: July 2026 — ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration; ADR ordering corrected*
+*Last updated: July 2026 — ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration*

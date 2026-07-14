@@ -14,8 +14,9 @@ ARBoard is a deliberative multi-agent architecture review system. Contributions 
 6. [Frontend component structure](#frontend-component-structure)
 7. [Adding a new input mode](#adding-a-new-input-mode)
 8. [GoalOrchestrator pattern](#goalorchestrator-pattern)
-9. [Pull request checklist](#pull-request-checklist)
-10. [Things you must never do](#things-you-must-never-do)
+9. [Using the LLM abstraction layer](#using-the-llm-abstraction-layer)
+10. [Pull request checklist](#pull-request-checklist)
+11. [Things you must never do](#things-you-must-never-do)
 
 ---
 
@@ -49,7 +50,7 @@ Open `src/config/agentManifest.json` and add an entry **before** `sf-judge` (kee
   "promptFile": "sf-myagent",
   "enabled": true,
   "alwaysInclude": false,
-  "skillKeywords": ["keyword1", "keyword2", "keyword3"],
+  "keywords": ["keyword1", "keyword2", "keyword3"],
   "description": "One sentence describing what this agent reviews."
 }
 ```
@@ -61,7 +62,7 @@ Open `src/config/agentManifest.json` and add an entry **before** `sf-judge` (kee
 | `id` | Canonical agent ID — used in session traces and ADRs. Never change after first commit. |
 | `file` | Basename of the TS agent config file in `src/lib/domains/salesforce/agents/` |
 | `promptFile` | Basename of the prompt `.md` file in `src/prompts/agents/` |
-| `skillKeywords` | `ImpactAnalyser` uses these to decide whether to activate this agent for a given SDD |
+| `keywords` | `ImpactAnalyser` uses these to decide whether to activate this agent for a given SDD |
 | `alwaysInclude` | `true` only for judge, scribe, learner |
 
 **Model guidance:**
@@ -440,6 +441,58 @@ Do not construct Jira HTTP calls inline in route handlers — always go through 
 
 ---
 
+## Using the LLM abstraction layer
+
+All LLM calls must go through `getLLMProvider()` from `@/lib/llm`. Never instantiate `new Anthropic()` directly in route handlers, orchestrators, or agent files — that bypasses the provider abstraction and repeats the module-level client anti-pattern.
+
+**One-shot completion** (ImpactAnalyser, dissent analysis, DocumentChunker pattern):
+
+```typescript
+import { getLLMProvider } from "@/lib/llm";
+
+// Mock guard stays in the call site, above the provider
+if (mode === "mock") return mockResponse;
+
+const { text, usage } = await getLLMProvider().complete({
+  model: "claude-haiku-4-5-20251001",
+  maxTokens: 1000,
+  system: "Your system prompt",
+  messages: [{ role: "user", content: userInput }],
+});
+```
+
+**Streaming** (AgentRunner pattern):
+
+```typescript
+import { getLLMProvider } from "@/lib/llm";
+import type { LLMMessage } from "@/lib/llm";
+
+const userContent: LLMMessage["content"] = hasImages
+  ? [/* image + text blocks */]
+  : plainTextInput;
+
+for await (const chunk of getLLMProvider().stream({
+  model: agent.model,
+  maxTokens: agent.maxTokens,
+  system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+  messages: [{ role: "user", content: userContent }],
+})) {
+  if (typeof chunk === "string") {
+    yield chunk;          // text token
+  } else {
+    yield chunk;          // { __usage: LLMUsage } — terminal sentinel, always last
+  }
+}
+```
+
+**Key rules:**
+- `AnthropicProvider` lazy-inits the Anthropic client inside each call — never at module level.
+- The `{ __usage }` sentinel is the final item yielded by `stream()` — consumers distinguish it from text tokens with `typeof chunk === "string"`.
+- `complete()` returns `{ text: "", usage }` (not an error) when the model returns no text block — check `!text` and throw/handle explicitly if empty is invalid for your use case.
+- `LLM_PROVIDER` env var selects the implementation (default: `anthropic`).
+
+---
+
 ## Pull request checklist
 
 Before opening a PR, confirm all of the following:
@@ -453,6 +506,7 @@ Before opening a PR, confirm all of the following:
 - [ ] If a new input mode was added — `InputMode` union updated in `forum/types.ts`, tile added to selector, pre-session panel in `forum/presession/` if required
 - [ ] If a Supabase schema was changed — migration file added to `supabase/migrations/` and `goals` label lifecycle documented if a new status value was introduced
 - [ ] If any Jira API calls were added — use helpers from `src/lib/integrations/jira.ts` (not inline fetch); use `/rest/api/3/search/jql` not the legacy search endpoint
+- [ ] If any LLM calls were added — use `getLLMProvider()` from `@/lib/llm`, not `new Anthropic()` directly; mock guard lives in the call site above the provider; no SDK clients constructed at module level
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
 
@@ -473,6 +527,8 @@ These rules exist to protect the integrity of ARBoard's institutional knowledge:
 | Never change Judge agent prompt without running eval suite | Judge is the arbitration layer — prompt drift breaks verdict quality |
 | Never add a frontend `fetch()` to `/api/*` without the `x-arboard-key` header | `requireApiKey` middleware returns 401; silent failure in the UI with no visible error |
 | Never include skipped agent output in the dissent analysis input | In document-upload mode, `designerOutput` is set to the raw SDD text — passing it to the dissent analyser under the designer's name causes the LLM to hallucinate a fabricated dissent opinion from document content. The `designerSkipped` flag in `ForumOrchestrator.ts` guards this. |
+| Never call `new Anthropic()` directly in route handlers, orchestrators, or agent files | All LLM calls go through `getLLMProvider()` in `@/lib/llm`. Direct SDK instantiation bypasses the provider abstraction and makes provider swaps impossible. |
+| Never construct SDK clients (Anthropic, Supabase) at module level | Module-level clients are instantiated at import time, before env vars are loaded in test/edge environments. Always lazy-init inside functions. `DocumentChunker.ts` violated this and was corrected in the LLM abstraction migration. |
 
 ---
 
