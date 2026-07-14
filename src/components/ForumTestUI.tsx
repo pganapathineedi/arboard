@@ -8,369 +8,37 @@ import { OrgHealthPanel } from "@/components/OrgHealthPanel";
 import { ConnectedAppSetupModal } from "@/components/ConnectedAppSetupModal";
 import { ClientContextBanner } from "@/components/ClientContextBanner";
 import { EndorsementPanel } from "@/components/EndorsementPanel";
-import { MODEL_PRICING } from "@/lib/pricing";
 import { CostMonitor } from "@/components/CostMonitor";
+import { JiraInputPanel } from "./forum/presession/JiraInputPanel";
+import type {
+  AgentOutput, DissentAgent, DissentData, SSEEvent,
+  PendingEndorsement, AppliedCtx, ModelId, ChipStatus,
+  RoiComplexity, EstimatePanelProps,
+} from "./forum/types";
+import {
+  MODEL_CONFIG, ALL_AGENT_IDS, AGENT_META, RISK_SEVERITY_COLOR,
+  PRIORITY_STYLE, FORMAT_LABELS, DEFAULT_INPUT, ACCEPTED,
+  ALWAYS_ON_IDS, CLOSING_AGENT_IDS, ARCHITECT_ROLES,
+} from "./forum/constants";
+import {
+  formatBytes, formatDuration, formatAge, formatCost,
+  estimateSession, parseConfidence, parseVerdict, parseMustFix,
+  parseJudgeConfidenceLevel, parseHumanJudgementPoints,
+  stripJsonBlock, getAgentStatus, computeRoi, fmtSavingPct,
+  getSectionLabel,
+} from "./forum/utils";
+import { S } from "./forum/styles";
+import { Chip } from "./forum/primitives/Chip";
+import { ConfidenceBar } from "./forum/primitives/ConfidenceBar";
+import { SectionDivider } from "./forum/primitives/SectionDivider";
+import { MarkdownOutput } from "./forum/primitives/MarkdownOutput";
 
-// ── Local Types ───────────────────────────────────────────────────────────────
 
-interface AgentOutput {
-  agentId: string;
-  agentName: string;
-  role: string;
-  content: string;
-  complete: boolean;
-  skipped?: boolean;
-  error?: string;
-  startTime: number;
-  durationMs?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-}
 
-interface DissentAgent {
-  name: string;
-  risk_level: "HIGH" | "MEDIUM" | "LOW";
-  key_concern: string;
-  recommendation: string;
-  aligns_with_verdict: boolean;
-  dissent_reason: string | null;
-}
-
-interface DissentData {
-  dissent_summary: string;
-  total_dissenting: number;
-  agents: DissentAgent[];
-}
-
-interface SSEEvent {
-  type: string;
-  sessionId?: string;
-  agentId?: string;
-  agentName?: string;
-  role?: string;
-  token?: string;
-  error?: string;
-  analysis?: ImpactAnalysis;
-  agentCount?: number;
-  status?: string;
-  durationMs?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  jiraIssueKey?: string | null;
-  jiraIssueUrl?: string | null;
-  // pending_endorsement fields
-  requirement?: string;
-  verdict?: string;
-  confidenceLevel?: string;
-  humanJudgementPoints?: string[];
-  scribeNotes?: string;
-  mustFixIssues?: string[];
-  // dissent_analysis fields
-  dissent_summary?: string;
-  total_dissenting?: number;
-  agents?: DissentAgent[];
-}
-
-interface PendingEndorsement {
-  requirement:          string;
-  verdict:              string;
-  confidenceLevel:      string;
-  humanJudgementPoints: string[];
-  scribeNotes:          string;
-  mustFixIssues:        string[];
-}
-
-interface AppliedCtx {
-  clouds: string[];
-  compliance: string[];
-  integrations: string[];
-}
-
-type ModelId = "claude-haiku-4-5-20251001" | "claude-sonnet-4-6" | "claude-opus-4-8";
-type ChipStatus = "idle" | "active" | "done" | "warn" | "skipped" | "error";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const MODEL_CONFIG: Record<ModelId, {
-  label: string; icon: string;
-  inputPer1K: number; outputPer1K: number; cacheReadPer1K: number; cacheWritePer1K: number;
-  description: string;
-}> = {
-  "claude-haiku-4-5-20251001": {
-    label: "claude-haiku-4-5", icon: "⚡",
-    ...MODEL_PRICING["claude-haiku-4-5-20251001"],
-    description: "Fast · Cost-efficient · Good for most reviews",
-  },
-  "claude-sonnet-4-6": {
-    label: "claude-sonnet-4-6", icon: "🧠",
-    ...MODEL_PRICING["claude-sonnet-4-6"],
-    description: "Balanced · Recommended for complex projects",
-  },
-  "claude-opus-4-8": {
-    label: "claude-opus-4-8", icon: "🚀",
-    ...MODEL_PRICING["claude-opus-4-8"],
-    description: "Maximum depth · Best for high-stakes reviews",
-  },
-};
-
-const ALL_AGENT_IDS = [
-  "sf-designer", "sf-lwc", "sf-omni", "sf-flow",
-  "sf-apex", "sf-patterns", "sf-integration", "sf-judge", "sf-scribe", "sf-learner",
-];
-
-const AGENT_META: Record<string, {
-  icon: string; color: string; badge: string; estSeconds: number; shortName: string;
-}> = {
-  "sf-designer":   { icon: "🎨", color: "#00c8f0", badge: "SOLUTION ARCH",  estSeconds: 45, shortName: "Designer"   },
-  "sf-lwc":        { icon: "⚡", color: "#00c8f0", badge: "UI SPECIALIST",   estSeconds: 28, shortName: "LWC"        },
-  "sf-omni":       { icon: "🔮", color: "#9f70f5", badge: "OMNI EXPERT",     estSeconds: 32, shortName: "OmniStudio" },
-  "sf-flow":       { icon: "🔄", color: "#f0a020", badge: "FLOW BUILDER",    estSeconds: 35, shortName: "Flow"       },
-  "sf-apex":       { icon: "⚙️",  color: "#e84040", badge: "APEX EXPERT",    estSeconds: 40, shortName: "Apex"       },
-  "sf-patterns":    { icon: "📐", color: "#0fba7a", badge: "PATTERNS",        estSeconds: 35, shortName: "Patterns"    },
-  "sf-integration": { icon: "🔗", color: "#00c8f0", badge: "INTEGRATION",     estSeconds: 40, shortName: "Integration" },
-  "sf-judge":       { icon: "⚖️",  color: "#f0a020", badge: "JUDGE",          estSeconds: 45, shortName: "Judge"       },
-  "sf-scribe":     { icon: "📝", color: "#7B8DB0", badge: "SCRIBE",          estSeconds: 20, shortName: "Scribe"     },
-  "sf-learner":    { icon: "🎓", color: "#9f70f5", badge: "LEARNER",         estSeconds: 18, shortName: "Learner"    },
-};
-
-const RISK_SEVERITY_COLOR: Record<string, string> = {
-  critical: "#e84040", high: "#e84040", medium: "#f0a020", low: "#0fba7a",
-};
-
-const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
-  required:    { bg: "rgba(232,64,64,0.12)",   text: "#e84040" },
-  recommended: { bg: "rgba(240,160,32,0.12)",  text: "#f0a020" },
-  optional:    { bg: "rgba(90,106,138,0.12)",  text: "#7B8DB0" },
-};
-
-const FORMAT_LABELS: Record<string, string> = {
-  pdf: "PDF", docx: "DOCX", txt: "TXT", md: "MD", html: "HTML",
-};
-
-const DEFAULT_INPUT =
-  "NovaPeak Financial Services requires migration of core banking workflows to Salesforce Financial Services Cloud, with a self-service client portal on Experience Cloud for B2C customers to view real-time transaction data, submit service cases, and receive Einstein Bot-assisted case deflection. The portal integrates with NovaPeak's core banking system via MuleSoft Anypoint Platform. Transaction data must be scoped to the authenticated client's account only and comply with APRA-CPS234. Einstein Bots should handle initial case triage and deflect common queries before routing to human agents. The solution must support 50,000 active portal users and up to 10 million transaction records within 24 months of launch.";
-
-const ACCEPTED = ".pdf,.doc,.docx";
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1_048_576) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1_048_576).toFixed(1)} MB`;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-function formatAge(date: Date): string {
-  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.001) return `<$0.001`;
-  if (usd < 0.01)  return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(3)}`;
-}
-
-function estimateSession(inputText: string, agentCount: number, modelId: ModelId, imageCount = 0) {
-  const reqTokens      = Math.ceil(inputText.length / 4 * 0.73);
-  const sysTokens      = 450 + 400; // 450 base system prompt + ~400 Well-Architected principles injection per agent
-  const outputPerAgent = 800;
-  const baseInput      = reqTokens + sysTokens;
-  const imageTokens    = imageCount * 1600 * Math.min(2, agentCount); // sf-patterns and sf-judge receive images
-
-  // Each agent receives the document plus all prior agent outputs as cumulative context.
-  // Agent i (0-indexed) input = baseInput + outputPerAgent * i
-  // Sum over all agents = agentCount * baseInput + outputPerAgent * (agentCount * (agentCount - 1) / 2)
-  const totalInput  = agentCount * baseInput + outputPerAgent * (agentCount * (agentCount - 1) / 2) + imageTokens;
-  const totalOutput = outputPerAgent * agentCount;
-  const totalTokens = totalInput + totalOutput;
-  const cfg  = MODEL_CONFIG[modelId];
-  const cost = totalInput / 1000 * cfg.inputPer1K + totalOutput / 1000 * cfg.outputPer1K;
-  return {
-    agentCount, totalInput, totalOutput, totalTokens, cost,
-    minTokens: Math.floor(totalTokens * 0.8),
-    maxTokens: Math.floor(totalTokens * 1.2),
-    minCost:   cost * 0.8,
-    maxCost:   cost * 1.2,
-  };
-}
-
-function parseConfidence(content: string): number | null {
-  const m = content.match(/CONFIDENCE:\s*(\d+)\/100/i);
-  return m ? Math.min(100, Math.max(0, parseInt(m[1]))) : null;
-}
-
-function parseVerdict(content: string): "approved" | "conditional" | "not_approved" | "revision" | null {
-  const u = content.toUpperCase();
-  if (u.includes("APPROVED WITH CONDITIONS") || u.includes("APPROVE WITH CONDITIONS") || u.includes("CONDITIONALLY APPROVED")) return "conditional";
-  if (u.includes("REVISION REQUIRED") || u.includes("REQUIRES REVISION"))            return "revision";
-  if (u.includes("NOT APPROVED"))                                                      return "not_approved";
-  if (u.includes("APPROVED"))                                                          return "approved";
-  return null;
-}
-
-function parseMustFix(content: string): string[] {
-  const block = content.match(
-    /(?:MUST FIX[:\s]*|##\s+(?:Critical Issues|MUST FIX)[^\n]*\nMUST FIX[:\s]*)([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i
-  ) ?? content.match(/MUST FIX[:\s]*\n([\s\S]+?)(?=\n##|\n[A-Z]{3,}[\s:]|\n\n\n|$)/i);
-  if (!block) return [];
-  return block[1]
-    .split("\n")
-    .filter(l => /^\d+\./.test(l.trim()))
-    .map(l => l.replace(/^\d+\.\s*/, "").trim())
-    .filter(Boolean)
-    .slice(0, 5);
-}
-
-function parseJudgeConfidenceLevel(content: string): "High" | "Medium" | "Needs human review" | null {
-  const sectionMatch = content.match(/##\s+Confidence Level\s*\n\*\*(High|Medium|Needs human review)\*\*/i);
-  if (sectionMatch) {
-    const v = sectionMatch[1].toLowerCase();
-    if (v.includes("needs")) return "Needs human review";
-    if (v === "medium") return "Medium";
-    if (v === "high") return "High";
-  }
-  const inlineMatch = content.match(/confidence level[:\s*]+([^\n*\r]+)/i);
-  if (inlineMatch) {
-    const v = inlineMatch[1].trim().replace(/\*+/g, "").toLowerCase();
-    if (v.includes("needs") || v.includes("human")) return "Needs human review";
-    if (v.includes("medium")) return "Medium";
-    if (v.includes("high")) return "High";
-  }
-  return null;
-}
-
-function parseHumanJudgementPoints(content: string): string[] {
-  const block = content.match(/##\s+Points Requiring Human Judgement\s*\n([\s\S]+?)(?=\n##|$)/i);
-  if (!block) return [];
-  return block[1]
-    .split("\n")
-    .filter(l => /^[-•*]/.test(l.trim()))
-    .map(l => l.replace(/^[-•*]+\s*/, "").trim())
-    .filter(l => Boolean(l) && !l.toLowerCase().includes("none identified"))
-    .slice(0, 10);
-}
-
-function stripJsonBlock(content: string): string {
-  const match = content.match(/^([\s\S]*)\n---\n[\s\S]*```json[\s\S]*```\s*$/);
-  return match ? match[1].trim() : content;
-}
-
-function getAgentStatus(
-  agentId: string,
-  agents: AgentOutput[],
-  activeAgentIds: Set<string>,
-  analysisComplete: boolean,
-): ChipStatus {
-  const a = agents.find(x => x.agentId === agentId);
-  if (a) {
-    if (a.error)    return "error";
-    if (a.skipped)  return "skipped";
-    if (!a.complete) return "active";
-    const conf = parseConfidence(a.content);
-    return conf !== null && conf < 50 ? "warn" : "done";
-  }
-  if (analysisComplete && activeAgentIds.size > 0 && !activeAgentIds.has(agentId)) return "skipped";
-  return "idle";
-}
-
-// ── Shared style helpers ──────────────────────────────────────────────────────
-
-const S = {
-  card: {
-    background: "#0f1420",
-    border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 10,
-  } as React.CSSProperties,
-  panel: {
-    background: "#161d2e",
-    border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 10,
-  } as React.CSSProperties,
-  label: {
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: 1.2,
-    color: "#7B8DB0",
-    textTransform: "uppercase" as const,
-  } as React.CSSProperties,
-  mono: {
-    fontFamily: "monospace",
-  } as React.CSSProperties,
-};
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function Chip({ label, color = "#7B8DB0" }: { label: string; color?: string }) {
-  return (
-    <span style={{
-      fontFamily: "monospace", fontSize: 11,
-      padding: "2px 8px", borderRadius: 4,
-      border: `1px solid ${color}44`,
-      background: `${color}18`,
-      color,
-    }}>
-      {label}
-    </span>
-  );
-}
-
-function ConfidenceBar({ value, size = "md" }: { value: number; size?: "sm" | "md" }) {
-  const color = value >= 80 ? "#0fba7a" : value >= 50 ? "#f0a020" : "#e84040";
-  const h = size === "sm" ? 3 : 4;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ flex: 1, height: h, background: "rgba(255,255,255,0.06)", borderRadius: h }}>
-        <div style={{
-          height: "100%", width: `${value}%`,
-          background: color, borderRadius: h,
-          transition: "width 0.6s ease",
-        }} />
-      </div>
-      <span style={{ fontFamily: "monospace", fontSize: 10, color, minWidth: 28 }}>
-        {value}/100
-      </span>
-    </div>
-  );
-}
-
-function SectionDivider({ label }: { label: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 16px" }}>
-      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-      <span style={{ ...S.label, fontSize: 11, color: "#7B8DB0" }}>{label}</span>
-      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }} />
-    </div>
-  );
-}
-
 // ── EstimatePanel ─────────────────────────────────────────────────────────────
-
-interface EstimatePanelProps {
-  agentCount: number;
-  totalTokens: number;
-  minTokens: number;
-  maxTokens: number;
-  cost: number;
-  minCost: number;
-  maxCost: number;
-  modelLabel: string;
-}
 
 function EstimatePanel(p: EstimatePanelProps) {
   const budgetPct = Math.min(100, (p.cost / 0.5) * 100);
@@ -492,22 +160,6 @@ function ModelDropdown({
 }
 
 // ── ROI Estimator ─────────────────────────────────────────────────────────────
-
-type RoiComplexity = "low" | "medium" | "high";
-
-function computeRoi(rate: number, architects: number, complexity: RoiComplexity, arbCost: number) {
-  const mult    = complexity === "high" ? 2 : complexity === "medium" ? 1.5 : 1;
-  const rework  = complexity === "high" ? 20000 : complexity === "medium" ? 10000 : 5000;
-  const prep    = architects * 3 * rate * mult;
-  const meeting = architects * 2 * rate * mult;
-  const total   = prep + meeting + rework;
-  const saving  = total - arbCost;
-  const savingPct     = Math.round((saving / total) * 100);
-  const hoursReturned = architects * 3;
-  return { prep, meeting, rework, total, saving, savingPct, hoursReturned };
-}
-
-const fmtSavingPct = (pct: number) => pct >= 100 ? ">99%" : `${pct}%`;
 
 function ARBCostEstimator({
   arbCost, roiRate, setRoiRate, roiArchitects, setRoiArchitects, roiComplexity, setRoiComplexity,
@@ -646,8 +298,6 @@ function ARBCostEstimator({
 }
 
 // ── AgentSelectorPanel ────────────────────────────────────────────────────────
-
-const ALWAYS_ON_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 
 function AgentSelectorPanel({
   analysis, model, input, selectedAgentIds, onToggle, onReset, onRun,
@@ -1179,86 +829,7 @@ function SessionTimeline({ agents, activeAgentIds, analysisComplete }: {
 }
 
 // ── MarkdownOutput ────────────────────────────────────────────────────────────
-
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/);
-  return parts.map((p, i) => {
-    if (p.startsWith("**") && p.endsWith("**"))
-      return <strong key={i} style={{ color: "#F0F4FF", fontWeight: 700 }}>{p.slice(2, -2)}</strong>;
-    if (p.startsWith("`") && p.endsWith("`"))
-      return <code key={i} style={{ fontFamily: "monospace", fontSize: 11, background: "rgba(255,255,255,0.08)", padding: "1px 5px", borderRadius: 3, color: "#00c8f0" }}>{p.slice(1, -1)}</code>;
-    return p;
-  });
-}
-
-function renderTable(rows: string[]): React.ReactNode {
-  const dataRows = rows.filter(r => !/^\|[-:\s|]+\|$/.test(r));
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, margin: "8px 0 12px" }}>
-      <tbody>
-        {dataRows.map((row, ri) => {
-          const cells = row.split("|").slice(1, -1);
-          return (
-            <tr key={ri}>
-              {cells.map((cell, ci) =>
-                ri === 0
-                  ? <th key={ci} style={{ padding: "4px 8px", textAlign: "left", borderBottom: "1px solid rgba(0,200,240,0.3)", color: "#00c8f0", fontFamily: "monospace", fontWeight: 700 }}>{cell.trim()}</th>
-                  : <td key={ci} style={{ padding: "4px 8px", borderBottom: "1px solid rgba(255,255,255,0.04)", color: "#c8d8f0" }}>{renderInline(cell.trim())}</td>
-              )}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-function MarkdownOutput({ content }: { content: string }) {
-  const segments = content.split(/(```[\s\S]*?```)/);
-  return (
-    <div style={{ fontSize: 13, color: "#F0F4FF", lineHeight: 1.7, overflowWrap: "break-word", wordBreak: "break-word" }}>
-      {segments.map((seg, si) => {
-        if (seg.startsWith("```")) {
-          const match = seg.match(/^```\w*\n?([\s\S]*?)```$/);
-          return (
-            <pre key={si} style={{ background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: "#a8d8ea", overflowX: "auto", margin: "8px 0" }}>
-              <code>{(match?.[1] ?? seg.slice(3, -3)).trim()}</code>
-            </pre>
-          );
-        }
-        const lines = seg.split("\n");
-        const out: React.ReactNode[] = [];
-        let i = 0;
-        while (i < lines.length) {
-          const line = lines[i];
-          if (line.startsWith("| ")) {
-            const tableLines: string[] = [];
-            while (i < lines.length && lines[i].startsWith("|")) { tableLines.push(lines[i]); i++; }
-            out.push(<React.Fragment key={`t${i}`}>{renderTable(tableLines)}</React.Fragment>);
-            continue;
-          }
-          if (line.startsWith("## ")) {
-            out.push(<div key={i} style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#00c8f0", letterSpacing: 1, marginTop: 16, marginBottom: 6, borderBottom: "1px solid rgba(0,200,240,0.2)", paddingBottom: 4 }}>{line.slice(3).toUpperCase()}</div>);
-          } else if (line.startsWith("### ")) {
-            out.push(<div key={i} style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#7ec8e3", marginTop: 10, marginBottom: 4 }}>{renderInline(line.slice(4))}</div>);
-          } else if (line.startsWith("# ")) {
-            out.push(<div key={i} style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: "#00c8f0", marginBottom: 8 }}>{renderInline(line.slice(2))}</div>);
-          } else if (/^\d+\./.test(line.trim())) {
-            out.push(<div key={i} style={{ display: "flex", gap: 8, marginBottom: 4 }}><span style={{ color: "#00c8f0", fontFamily: "monospace", fontSize: 12, flexShrink: 0 }}>{line.match(/^(\d+\.)/)?.[1]}</span><span>{renderInline(line.replace(/^\d+\.\s*/, ""))}</span></div>);
-          } else if (line.startsWith("- ") || line.startsWith("* ")) {
-            out.push(<div key={i} style={{ display: "flex", gap: 8, marginBottom: 3 }}><span style={{ color: "#00c8f044" }}>›</span><span>{renderInline(line.slice(2))}</span></div>);
-          } else if (line.trim()) {
-            out.push(<p key={i} style={{ margin: "0 0 4px" }}>{renderInline(line)}</p>);
-          } else {
-            out.push(<div key={i} style={{ height: 6 }} />);
-          }
-          i++;
-        }
-        return <React.Fragment key={si}>{out}</React.Fragment>;
-      })}
-    </div>
-  );
-}
+// Imported from ./forum/primitives/MarkdownOutput
 
 // ── AgentCard ─────────────────────────────────────────────────────────────────
 
@@ -1375,13 +946,6 @@ function AgentCard({ agent, sectionLabel, validationPassed }: { agent: AgentOutp
 }
 
 // ── VerdictBox ────────────────────────────────────────────────────────────────
-
-const ARCHITECT_ROLES = [
-  "Lead Architect",
-  "Solution Architect",
-  "Technical Lead",
-  "Client Architecture Lead",
-] as const;
 
 function VerdictBox({
   verdict, judgeContent, agents, sessionStartTime,
@@ -1907,7 +1471,7 @@ export default function ForumTestUI() {
   const [model, setModel]               = useState<ModelId>("claude-sonnet-4-6");
   const [apiMode, setApiMode]           = useState<"mock" | "real">("mock");
   const [input, setInput]               = useState("");
-  const [inputMode, setInputMode]       = useState<"review" | "greenfield" | "debate" | null>(null);
+  const [inputMode, setInputMode]       = useState<"review" | "greenfield" | "debate" | "jira" | null>(null);
   const [agents, setAgents]             = useState<AgentOutput[]>([]);
   const [running, setRunning]           = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -1955,10 +1519,13 @@ export default function ForumTestUI() {
   const [tokenUsage, setTokenUsage]                   = useState<{ agent: string; input: number; output: number }[]>([]);
   const [dissentData, setDissentData]                 = useState<DissentData | null>(null);
   const [validationMap, setValidationMap]             = useState<Record<string, boolean>>({});
+  const [goalTriggerNotice, setGoalTriggerNotice]     = useState<{ issueKey: string; goalId: string } | null>(null);
+  const [jiraContext, setJiraContext]                 = useState<{ issueKey: string; summary: string } | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const abortRef     = useRef<AbortController | null>(null);
-  const forumRef     = useRef<HTMLDivElement | null>(null);
+  const fileInputRef    = useRef<HTMLInputElement | null>(null);
+  const abortRef        = useRef<AbortController | null>(null);
+  const forumRef        = useRef<HTMLDivElement | null>(null);
+  const jiraAutoAnalyse = useRef(false);
 
   // Derived
   const showSessionView = running || agents.length > 0 || sessionComplete;
@@ -2045,6 +1612,16 @@ export default function ForumTestUI() {
   useEffect(() => {
     if (forumRef.current) forumRef.current.scrollTop = forumRef.current.scrollHeight;
   }, [agents]);
+
+  // Listen for goal-triggered events from GoalsPanel
+  useEffect(() => {
+    const handle = (e: Event) => {
+      const { issueKey, goalId } = (e as CustomEvent<{ issueKey: string; goalId: string }>).detail
+      setGoalTriggerNotice({ issueKey, goalId })
+    }
+    window.addEventListener('arboard:goal-triggered', handle)
+    return () => window.removeEventListener('arboard:goal-triggered', handle)
+  }, []);
 
   // ── Salesforce Org Connection ───────────────────────────────────────────────
 
@@ -2136,6 +1713,20 @@ export default function ForumTestUI() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }, []);
+
+  function handleJiraFileReady(file: File, ctx: { issueKey: string; summary: string }) {
+    setJiraContext(ctx);
+    jiraAutoAnalyse.current = true;
+    handleFileUpload(file);
+  }
+
+  useEffect(() => {
+    if (jiraAutoAnalyse.current && uploadResult) {
+      jiraAutoAnalyse.current = false;
+      analyzeImpact();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadResult]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
@@ -2364,6 +1955,7 @@ export default function ForumTestUI() {
     setTokenUsage([]);
     setDissentData(null);
     setValidationMap({});
+    setJiraContext(null);
     setUploadResult(null);
     setUploading(false);
     setUploadError(null);
@@ -2473,20 +2065,6 @@ export default function ForumTestUI() {
     uploadResult.detectedContext.integrations.length > 0
   );
 
-  // ── Section labels — derived from agent position, not hardcoded IDs ────────
-  const CLOSING_AGENT_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
-
-  function getSectionLabel(agent: AgentOutput, idx: number): string | undefined {
-    if (agent.agentId === "sf-designer") return "SOLUTION DESIGN";
-    if (agent.agentId === "sf-judge")   return "JUDGE RULING";
-    if (agent.agentId === "sf-scribe")  return "SCRIBE & LEARNING";
-    // First specialist = first non-designer, non-closing agent in the stream
-    const isSpecialist = !CLOSING_AGENT_IDS.has(agent.agentId) && agent.agentId !== "sf-designer";
-    const prevIsDesigner = idx > 0 && agents[idx - 1].agentId === "sf-designer";
-    if (isSpecialist && prevIsDesigner) return "SPECIALIST REVIEWS";
-    return undefined;
-  }
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -2592,8 +2170,56 @@ export default function ForumTestUI() {
 
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 0" }}>
 
+        {/* ══ GOAL TRIGGER NOTICE ══════════════════════════════════════════════ */}
+        {goalTriggerNotice && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "10px 16px", marginBottom: 16,
+            background: "rgba(0,200,240,0.07)",
+            border: "1px solid rgba(0,200,240,0.3)",
+            borderRadius: 8,
+          }}>
+            <span
+              className="animate-pulse"
+              style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: "#00c8f0", display: "inline-block", flexShrink: 0,
+              }}
+            />
+            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#00c8f0", flex: 1 }}>
+              Background review in progress —{" "}
+              <strong style={{ color: "#F0F4FF" }}>{goalTriggerNotice.issueKey}</strong>
+              {" "}— pipeline running autonomously
+            </span>
+            <button
+              onClick={() =>
+                document.getElementById("goals-queue")?.scrollIntoView({ behavior: "smooth" })
+              }
+              style={{
+                fontFamily: "monospace", fontSize: 11,
+                padding: "3px 10px", borderRadius: 4,
+                border: "1px solid rgba(0,200,240,0.4)",
+                background: "transparent", color: "#00c8f0",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              See Goals History ↓
+            </button>
+            <button
+              onClick={() => setGoalTriggerNotice(null)}
+              style={{
+                background: "none", border: "none",
+                color: "#7B8DB0", cursor: "pointer",
+                fontSize: 14, flexShrink: 0, padding: "0 4px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* ══ PRE-SESSION VIEW ═════════════════════════════════════════════════ */}
-        {!showSessionView && !selectionMode && !analysing && (
+        {!showSessionView && !selectionMode && !analysing && !jiraAutoAnalyse.current && (
           <>
             {input.trim().length > 0 && <EstimatePanel
               agentCount={estimate.agentCount}
@@ -2612,6 +2238,7 @@ export default function ForumTestUI() {
                 { id: "review",     icon: "📄", title: "Review Existing Design",    sub: "Upload an SDD or architecture document for ARB review",                        tags: ["Designer skipped", "Specialists review", "Judge verdicts"] },
                 { id: "greenfield", icon: "⚡", title: "Design from Requirements",  sub: "Describe a business requirement — agents propose and debate a solution",        tags: ["Designer proposes", "Full debate", "Judge verdicts"] },
                 { id: "debate",     icon: "🧠", title: "Debate My Approach",        sub: "Describe your proposed architecture — agents will challenge and stress-test it", tags: ["Designer critiques", "Specialists challenge", "Judge verdicts"] },
+                { id: "jira",       icon: "⚡", title: "Jira Review Queue",         sub: "Fetch pending tickets from Jira and initiate an autonomous ARB review",         tags: ["submitted-for-review", "autonomous"] },
               ] as const).map(m => (
                 <div key={m.id} onClick={() => setInputMode(m.id)}
                   style={{
@@ -2734,6 +2361,14 @@ export default function ForumTestUI() {
               </div>
             )}
 
+            {/* Jira queue panel — shown in jira mode */}
+            {inputMode === "jira" && (
+              <JiraInputPanel
+                onFileReady={handleJiraFileReady}
+                onSwitchToReview={() => setInputMode("review")}
+              />
+            )}
+
             {/* Client Context Banner */}
             {/* <ClientContextBanner /> */}
 
@@ -2836,7 +2471,7 @@ export default function ForumTestUI() {
               </>
             )}
 
-            {inputMode && (
+            {inputMode && inputMode !== "jira" && (
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button
                   onClick={() => analyzeImpact()}
@@ -2892,6 +2527,28 @@ export default function ForumTestUI() {
             >
               ✕
             </button>
+          </div>
+        )}
+
+        {selectionMode && !showSessionView && analysis && jiraContext && (
+          <div style={{
+            background: 'rgba(30,64,175,0.15)',
+            border: '1px solid rgba(30,64,175,0.4)',
+            borderRadius: 8,
+            padding: '10px 16px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontFamily: 'monospace',
+            fontSize: 12,
+            color: '#93B4FF'
+          }}>
+            <span>⚡</span>
+            <span>
+              From Jira: <strong style={{ color: '#00d4ff' }}>{jiraContext.issueKey}</strong>
+              {' · '}{jiraContext.summary}
+            </span>
           </div>
         )}
 
@@ -2961,7 +2618,7 @@ export default function ForumTestUI() {
                 <div ref={forumRef} style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {agents.map((agent, idx) => {
                     if (agent.skipped) return null;
-                    const sectionLabel = getSectionLabel(agent, idx);
+                    const sectionLabel = getSectionLabel(agent, idx, agents);
                     return (
                       <div key={agent.agentId}>
                         {sectionLabel && <SectionDivider label={sectionLabel} />}
@@ -3221,7 +2878,7 @@ export default function ForumTestUI() {
         )}
       </div>
 
-      {/* ══ SESSION SUMMARY DRAWER ════════════════════════════════════════════ */}
+{/* ══ SESSION SUMMARY DRAWER ════════════════════════════════════════════ */}
       {showSummaryDrawer && sessionComplete && totalActualMs !== null && (
         <SessionSummaryDrawer
           agents={agents}
