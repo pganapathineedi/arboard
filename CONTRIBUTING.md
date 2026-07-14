@@ -359,6 +359,7 @@ Before opening a PR, confirm all of the following:
 - [ ] If skill files were changed — `npm run seed:agent -- <agent-id>` has been run
 - [ ] If a new failure pattern was added — seed script run (`seed:myagent-patterns`), then `seed:agent` run to embed
 - [ ] If a new agent was added — manifest entry (`agentManifest.json`), prompt file (`src/prompts/agents/`), agent config TS (`src/lib/domains/salesforce/agents/`), registered in `salesforce/index.ts`, and skill file (`src/skills/domains/`) all present
+- [ ] If a new frontend `fetch()` to any `/api/*` route was added — confirm it includes `'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? ''` in the headers (GET and POST). Missing this header returns 401.
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
 
@@ -377,6 +378,8 @@ These rules exist to protect the integrity of ARBoard's institutional knowledge:
 | Never push directly to `main` | All changes via PR with at least one review |
 | Never commit `.env.local` | Contains API keys — use `.env.local.example` for documentation |
 | Never change Judge agent prompt without running eval suite | Judge is the arbitration layer — prompt drift breaks verdict quality |
+| Never add a frontend `fetch()` to `/api/*` without the `x-arboard-key` header | `requireApiKey` middleware returns 401; silent failure in the UI with no visible error |
+| Never include skipped agent output in the dissent analysis input | In document-upload mode, `designerOutput` is set to the raw SDD text — passing it to the dissent analyser under the designer's name causes the LLM to hallucinate a fabricated dissent opinion from document content. The `designerSkipped` flag in `ForumOrchestrator.ts` guards this. |
 
 ---
 

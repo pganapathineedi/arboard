@@ -86,7 +86,7 @@
       "promptFile": "sf-profiles-permissions",
       "enabled": true,
       "alwaysInclude": false,
-      "skillKeywords": [
+      "keywords": [
         "profile", "permission set", "permission sets", "OWD", "org-wide default",
         "sharing", "FLS", "field level security", "field-level security",
         "guest user", "experience cloud", "community user", "external user",

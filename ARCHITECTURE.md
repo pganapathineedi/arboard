@@ -128,6 +128,9 @@ Salesforce cloud-hosted MCP gateway requires Enterprise/Production org with Agen
 ### ADR-006 — Mock/Live API toggle
 Dual API key environment pattern (`ANTHROPIC_API_KEY_MOCK` / `ANTHROPIC_API_KEY_REAL`) preserves demo safety. Mock mode returns cached responses; live mode uses real Anthropic API.
 
+### ADR-008 — x-arboard-key header required on all internal API calls
+Every fetch from the frontend to an `/api/*` route must include the header `x-arboard-key: <NEXT_PUBLIC_ARBOARD_API_KEY>`. This is enforced server-side by `requireApiKey` middleware applied to all API routes. Omitting the header returns 401. All `fetch()` calls in `ForumTestUI.tsx` carry this header — GET calls use a `headers` object, POST calls add it alongside `Content-Type`.
+
 ### ADR-007 — Prompt caching enabled (shipped)
 Anthropic prompt caching (`cache_control: ephemeral`) applied to system prompts in AgentRunner. Cache hit/miss metrics tracked in `UsageData` and surfaced in the session drawer UI.
 
@@ -160,11 +163,20 @@ Agent pipeline (sequential: sf-designer → specialists → sf-judge)
   ├── Domain system prompt (Layer 2)
   ├── SI failure patterns (Layer 3, domain-filtered from Supabase)
   └── RAG chunks (Layers 4–7): skills + failure patterns + org learnings + prior ADRs
+
+  Designer skip rules (ForumOrchestrator.ts):
+  ├── Document-upload mode (documentContent present, inputMode ≠ "debate"):
+  │     sf-designer emits agent_start + agent_complete{status:"skipped"};
+  │     designerSkipped=true — designer output is excluded from dissent analysis input
+  └── Revision rounds (isRevision=true):
+        designer is not resolved at all; excluded from dissent analysis via !isRevision guard
        ↓
 sf-scribe  → formats ADRs as Jira ADF
 sf-judge   → binding verdict (APPROVED / NOT APPROVED / CONDITIONAL)
 sf-learner → extracts org learnings → persists to Supabase org_learnings
              → auto-embeds each row into grounding_embeddings (fire-and-forget)
+Dissent analysis (Haiku) → compares each specialist's position against Judge verdict
+  Input: specialist outputs only — skipped designer is never included
        ↓
 Jira ticket creation (project: ARBOARD)
   → auto-embeds new ADR into grounding_embeddings (fire-and-forget)
@@ -317,4 +329,4 @@ supabase/
 
 ---
 
-*Last updated: July 2026*
+*Last updated: July 2026 — ADR-008 added; dissent pipeline designer-skip guard documented*

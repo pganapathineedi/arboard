@@ -986,11 +986,12 @@ function VerdictBox({
     revision:     { border: "#e84040", bg: "rgba(232,64,64,0.06)",  icon: "↻", label: "REVISION REQUIRED",       text: "#e84040" },
   }[verdict];
 
-  const confidenceConfig = confidenceLevel ? {
-    "High":               { bg: "rgba(15,186,122,0.12)",  color: "#0fba7a", border: "rgba(15,186,122,0.3)"  },
-    "Medium":             { bg: "rgba(240,160,32,0.12)",  color: "#f0a020", border: "rgba(240,160,32,0.3)"  },
-    "Needs human review": { bg: "rgba(232,64,64,0.12)",   color: "#e84040", border: "rgba(232,64,64,0.3)"   },
-  }[confidenceLevel] : null;
+  const confidenceConfig = confidenceLevel ? ({
+    approved:     { bg: "rgba(16,185,129,0.12)",  color: "#10B981", border: "rgba(16,185,129,0.3)"  },
+    conditional:  { bg: "rgba(245,158,11,0.12)",  color: "#F59E0B", border: "rgba(245,158,11,0.3)"  },
+    not_approved: { bg: "rgba(232,64,64,0.12)",   color: "#e84040", border: "rgba(232,64,64,0.3)"   },
+    revision:     { bg: "rgba(245,158,11,0.12)",  color: "#F59E0B", border: "rgba(245,158,11,0.3)"  },
+  }[verdict] ?? { bg: "rgba(245,158,11,0.12)", color: "#F59E0B", border: "rgba(245,158,11,0.3)" }) : null;
 
   const completedAgents = agents.filter(a => a.complete && !a.error);
 
@@ -1119,15 +1120,6 @@ function VerdictBox({
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <button
-          onClick={onDownload}
-          style={{
-            padding: "8px 18px", background: "#00c8f0", color: "#07090f",
-            fontWeight: 700, fontSize: 12, borderRadius: 6, cursor: "pointer", border: "none",
-          }}
-        >
-          ⬇ Download Report
-        </button>
         {verdict !== "approved" && (
           <button
             onClick={onRevisionRound}
@@ -1627,7 +1619,7 @@ export default function ForumTestUI() {
 
   const checkOrgStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/salesforce/status");
+      const res = await fetch("/api/salesforce/status", { headers: { 'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? '' } });
       const data = await res.json() as { connected: boolean; orgName?: string; edition?: string; isSandbox?: boolean };
       if (data.connected) {
         setOrgStatus("connected");
@@ -1643,7 +1635,7 @@ export default function ForumTestUI() {
   const fetchOrgMetadata = useCallback(async () => {
     setRefreshingOrg(true);
     try {
-      const res = await fetch("/api/salesforce/metadata");
+      const res = await fetch("/api/salesforce/metadata", { headers: { 'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? '' } });
       if (res.ok) {
         const ctx = await res.json() as OrgContext;
         setOrgContext(ctx);
@@ -1680,7 +1672,7 @@ export default function ForumTestUI() {
   }, [startConnect]);
 
   const handleOrgDisconnect = useCallback(async () => {
-    await fetch("/api/salesforce/disconnect", { method: "POST" });
+    await fetch("/api/salesforce/disconnect", { method: "POST", headers: { 'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? '' } });
     setOrgStatus("disconnected");
     setOrgContext(null);
     setOrgInfo(null);
@@ -1698,7 +1690,7 @@ export default function ForumTestUI() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res  = await fetch("/api/upload", { method: "POST", body: form });
+      const res  = await fetch("/api/upload", { method: "POST", body: form, headers: { 'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? '' } });
       const json = (await res.json()) as UploadResult & { error?: string; docHash?: string; duplicate?: { sessionId: string; jiraTicket: string | null } | null; embeddedImages?: { name: string; mediaType: string; base64: string }[] };
       if (!res.ok || !json.extractedText) { setUploadError(json.error ?? "Upload failed"); return; }
       setInput("");
@@ -1876,7 +1868,7 @@ export default function ForumTestUI() {
     try {
       const res = await fetch("/api/forum", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-arboard-key": process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? "" },
         body: JSON.stringify({
           input, clientContext, modelOverride: model, orgContext: orgContext ?? undefined,
           mode: apiMode,
@@ -1972,7 +1964,7 @@ export default function ForumTestUI() {
     const timestamp = new Date().toISOString();
     const res = await fetch("/api/adr/countersign", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-arboard-key": process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? "" },
       body: JSON.stringify({ sessionId, jiraIssueKey, architectName: name, architectRole: role, timestamp }),
     });
     if (!res.ok) {

@@ -3,6 +3,17 @@ import type { AgentActivation, ImpactAnalysis } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { isMockMode, isMockModeExplicit } from "@/lib/mock/mockMode";
+import { getKeywordMap, getAlwaysIncludeAgents, getEnabledAgents } from "@/lib/config/manifestLoader";
+
+const _keywordMap = getKeywordMap();
+const _alwaysInclude = getAlwaysIncludeAgents();
+
+const _agentScopeLines = [
+  ...Object.entries(_keywordMap).map(([id, kws]) => `- ${id}: ${kws.join(", ")}`),
+  ..._alwaysInclude.map((a) => `- ${a.id}: ${a.name} — ALWAYS required`),
+].join("\n");
+
+const _agentIdEnum = getEnabledAgents().map((a) => a.id).join("|");
 
 const ANALYSER_SYSTEM = `You are a Salesforce Architecture Impact Analyser for an Architecture Review Board.
 You will receive either a SHORT REQUIREMENT (1-3 paragraphs) or a FULL SOLUTION DESIGN DOCUMENT.
@@ -11,17 +22,7 @@ For a SHORT REQUIREMENT: analyse it directly to determine agent coverage and ris
 For a FULL SOLUTION DESIGN DOCUMENT: first extract the key architecture decisions, proposed Salesforce components, integration patterns, and stated risks — then map these to the specialist agents who must review them.
 
 Available agents and their scope:
-- sf-designer: Solution architecture, data model design, org strategy, integration architecture, multi-cloud
-- sf-lwc: Lightning Web Components, LWC lifecycle, SLDS, Experience Cloud, LMS, Aura migration
-- sf-omni: OmniStudio, OmniScript, DataRaptor, FlexCards, Integration Procedures, Industry Cloud
-- sf-flow: Flow automation, Record-Triggered Flow, Screen Flow, Scheduled Flow, Process Builder migration
-- sf-apex: Apex code, triggers, batch jobs, queueable chains, REST/SOAP integrations
-- sf-integration: MuleSoft, API-led connectivity, external system integration, event-driven architecture, REST/SOAP APIs
-- sf-patterns: Architecture patterns, Well-Architected Framework, scalability, LDV, AppExchange patterns
-- sf-data: Data model design, sharing model (OWD/roles/rules), LDV risk, data governance, PII/encryption
-- sf-judge: Final ARB verdict — ALWAYS required
-- sf-scribe: ADR documentation — ALWAYS required
-- sf-learner: Extract session learnings — ALWAYS required
+${_agentScopeLines}
 
 Risk classification:
 - critical: data loss, security breach, org corruption, breaking production
@@ -38,7 +39,7 @@ Respond with ONLY a valid JSON object — no markdown fences, no explanation. Us
   "estimatedComplexity": "low|medium|high",
   "activatedAgents": [
     {
-      "agentId": "sf-designer|sf-lwc|sf-apex|sf-flow|sf-omni|sf-integration|sf-patterns|sf-data|sf-judge|sf-scribe|sf-learner",
+      "agentId": "${_agentIdEnum}",
       "agentName": "human-readable display name e.g. LWC Specialist, Apex Engineer",
       "priority": "required|recommended|optional",
       "reason": "one line explaining why this agent is needed",

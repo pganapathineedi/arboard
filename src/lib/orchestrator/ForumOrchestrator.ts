@@ -330,6 +330,7 @@ export class ForumOrchestrator {
     } else {
       // ── Phase 1: Designer (skipped in revision rounds) ────────────────────
       let designerOutput = "";
+      let designerSkipped = false;
 
       if (designer && (!request.documentContent || request.inputMode === "debate")) {
         const effectiveDesigner = buildEffectiveAgent(designer, request, memoryBlocks[designer.id], priorADRBlock);
@@ -363,6 +364,7 @@ export class ForumOrchestrator {
         }
       } else if (designer && request.documentContent && request.inputMode !== "debate") {
         designerOutput = request.input;
+        designerSkipped = true;
         yield `data: ${JSON.stringify({ type: "agent_start", agentId: designer.id, agentName: designer.name, role: designer.role })}\n\n`;
         yield `data: ${JSON.stringify({ type: "agent_complete", agentId: designer.id, agentName: designer.name, role: designer.role, output: "", status: "skipped", reason: "Document upload — design already exists, review mode only", durationMs: 0 })}\n\n`;
       } else if (isRevision) {
@@ -630,7 +632,7 @@ export class ForumOrchestrator {
             };
           } else {
             const agentOutputsText = [
-              ...(designerOutput && !isRevision
+              ...(designerOutput && !isRevision && !designerSkipped
                 ? [`### ${allAgents.find(a => a.id === DESIGNER_ID)?.name ?? "Solution Designer"}\n${designerOutput}`]
                 : []),
               ...specialistOutputs.map(s => `### ${s.agentName}\n${s.content}`),

@@ -20,6 +20,20 @@ export interface JiraMember {
   emailAddress: string;
 }
 
+export interface JiraEnv {
+  domain: string;
+  email:  string;
+  token:  string;
+}
+
+export function getJiraEnv(): JiraEnv | null {
+  const domain = process.env.JIRA_DOMAIN;
+  const email  = process.env.JIRA_EMAIL;
+  const token  = process.env.JIRA_API_TOKEN;
+  if (!domain || !email || !token) return null;
+  return { domain, email, token };
+}
+
 // Recursively extract plain text from an ADF document node
 function extractADFText(node: unknown): string {
   if (!node || typeof node !== 'object') return '';
@@ -41,7 +55,7 @@ export async function fetchTicket(ticketId: string): Promise<string | null> {
   try {
     const res = await fetch(
       `https://${domain}/rest/api/3/issue/${ticketId}?fields=summary,description`,
-      { headers: buildHeaders(email, token) },
+      { headers: buildJiraHeaders(email, token) },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -65,7 +79,7 @@ export async function fetchProjectMembers(): Promise<JiraMember[]> {
 
   try {
     const url = `https://${domain}/rest/api/3/user/assignable/search?project=${projectKey}&maxResults=50`;
-    const res = await fetch(url, { headers: buildHeaders(email, token) });
+    const res = await fetch(url, { headers: buildJiraHeaders(email, token) });
     if (!res.ok) return [];
     const data = (await res.json()) as Array<{ accountId?: string; displayName?: string; emailAddress?: string }>;
     return data
@@ -222,8 +236,11 @@ function buildADF(params: JiraIssueParams): object {
   return { version: 1, type: 'doc', content };
 }
 
-function buildHeaders(email: string, token: string): Record<string, string> {
+export function buildJiraHeaders(email: string, token: string, forDownload = false): Record<string, string> {
   const auth = Buffer.from(`${email}:${token}`).toString('base64');
+  if (forDownload) {
+    return { Authorization: `Basic ${auth}` };
+  }
   return {
     Authorization: `Basic ${auth}`,
     'Content-Type': 'application/json',
@@ -255,7 +272,7 @@ async function searchExistingTicket(
   try {
     const res = await fetch(
       `https://${domain}/rest/api/3/search?jql=${jql}&maxResults=1&fields=summary,labels`,
-      { headers: buildHeaders(email, token) },
+      { headers: buildJiraHeaders(email, token) },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { issues: Array<{ key: string }> };
@@ -286,7 +303,7 @@ async function appendRevisionComment(
 
   await fetch(`https://${domain}/rest/api/3/issue/${issueKey}/comment`, {
     method: 'POST',
-    headers: buildHeaders(email, token),
+    headers: buildJiraHeaders(email, token),
     body: JSON.stringify({
       body: {
         version: 1, type: 'doc',
@@ -297,7 +314,7 @@ async function appendRevisionComment(
 
   // Update labels to reflect resolution
   const getRes = await fetch(`https://${domain}/rest/api/3/issue/${issueKey}`, {
-    headers: buildHeaders(email, token),
+    headers: buildJiraHeaders(email, token),
   }).catch(() => null);
 
   if (getRes?.ok) {
@@ -310,7 +327,7 @@ async function appendRevisionComment(
     }
     await fetch(`https://${domain}/rest/api/3/issue/${issueKey}`, {
       method: 'PUT',
-      headers: buildHeaders(email, token),
+      headers: buildJiraHeaders(email, token),
       body: JSON.stringify({ fields: { labels: updated } }),
     }).catch(err => { console.warn('[jira] label update after revision failed:', err); });
   }
@@ -384,7 +401,7 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: buildHeaders(email, token),
+      headers: buildJiraHeaders(email, token),
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -416,7 +433,7 @@ export async function createADRIssue(params: JiraIssueParams): Promise<JiraResul
       };
       await fetch(`https://${domain}/rest/api/3/issue/${data.key}/comment`, {
         method: 'POST',
-        headers: buildHeaders(email, token),
+        headers: buildJiraHeaders(email, token),
         body: JSON.stringify(commentBody),
       }).catch(err => { console.warn('[jira] human judgement comment failed:', err); });
     }
@@ -476,7 +493,7 @@ export async function updateADRSignOff(params: {
     return;
   }
 
-  const headers = buildHeaders(email, token);
+  const headers = buildJiraHeaders(email, token);
   const baseUrl = `https://${domain}/rest/api/3/issue/${params.issueKey}`;
 
   // Add countersignature as a comment
@@ -532,4 +549,50 @@ export async function updateADRSignOff(params: {
       body: JSON.stringify({ fields: { labels: newLabels } }),
     }).catch(err => { console.error('[jira] label update failed:', err); });
   }
+}
+
+export async function updateJiraLabels(
+  issueKey: string,
+  addLabel: string,
+  removeLabels: string[],
+  domain: string,
+  email: string,
+  token: string,
+): Promise<void> {
+  const headers = buildJiraHeaders(email, token);
+  const baseUrl = `https://${domain}/rest/api/3/issue/${issueKey}`;
+  const getRes = await fetch(baseUrl, { headers }).catch(() => null);
+  if (!getRes?.ok) {
+    console.warn(`[jira] failed to GET ${issueKey} for label update`);
+    return;
+  }
+  const issueData = (await getRes.json()) as { fields: { labels: string[] } };
+  const current: string[] = issueData.fields.labels ?? [];
+  const updated = current.filter(l => !removeLabels.includes(l));
+  if (!updated.includes(addLabel)) updated.push(addLabel);
+  await fetch(baseUrl, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ fields: { labels: updated } }),
+  }).catch(err => { console.warn('[jira] label update PUT failed:', err); });
+}
+
+export async function postJiraComment(
+  issueKey: string,
+  text: string,
+  domain: string,
+  email: string,
+  token: string,
+): Promise<void> {
+  await fetch(`https://${domain}/rest/api/3/issue/${issueKey}/comment`, {
+    method: 'POST',
+    headers: buildJiraHeaders(email, token),
+    body: JSON.stringify({
+      body: {
+        version: 1,
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+      },
+    }),
+  }).catch(err => { console.warn('[jira] comment POST failed:', err); });
 }
