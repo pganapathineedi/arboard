@@ -11,8 +11,11 @@ ARBoard is a deliberative multi-agent architecture review system. Contributions 
 3. [Adding or updating skill files](#adding-or-updating-skill-files)
 4. [Adding a failure pattern](#adding-a-failure-pattern)
 5. [Adding a new domain](#adding-a-new-domain)
-6. [Pull request checklist](#pull-request-checklist)
-7. [Things you must never do](#things-you-must-never-do)
+6. [Frontend component structure](#frontend-component-structure)
+7. [Adding a new input mode](#adding-a-new-input-mode)
+8. [GoalOrchestrator pattern](#goalorchestrator-pattern)
+9. [Pull request checklist](#pull-request-checklist)
+10. [Things you must never do](#things-you-must-never-do)
 
 ---
 
@@ -350,6 +353,93 @@ Create a synthetic solution design document for your domain with 3-5 deliberatel
 
 ---
 
+## Frontend component structure
+
+Forum UI code is split across `src/components/ForumTestUI.tsx` (root) and the `src/components/forum/` subdirectory. When making frontend changes, follow these conventions:
+
+```
+src/components/forum/
+  types.ts        — All shared TypeScript interfaces and types (AgentOutput, DissentData,
+                    PendingEndorsement, UploadResult, etc.). Add new types here, not inline.
+  constants.ts    — AGENT_META lookup, ALWAYS_ON_IDS, CLOSING_AGENT_IDS, ARCHITECT_ROLES.
+                    Add new agent metadata here when adding agents to the manifest.
+  utils.ts        — Pure functions: parseVerdict, parseConfidence, parseJudgeConfidenceLevel,
+                    parseHumanJudgementPoints, computeRoi, formatBytes, formatDuration, etc.
+                    All parsing helpers live here — do not add parsing logic to ForumTestUI.tsx.
+  styles.ts       — Shared inline style tokens (S.label, S.card, etc.). Use these rather than
+                    duplicating magic values inline.
+  primitives/     — Stateless UI atoms: Chip, ConfidenceBar, SectionDivider, MarkdownOutput.
+                    New reusable display-only components go here.
+  presession/     — Panels shown before a session starts (e.g. JiraInputPanel). Each panel
+                    receives callbacks for how to hand off to the main session flow.
+```
+
+`ForumTestUI.tsx` is the root orchestrator — it holds all session state and wires up the sub-panels. Keep business logic out of primitives and presession panels; they should receive data and callbacks as props only.
+
+---
+
+## Adding a new input mode
+
+ARBoard has four input modes: `"text"`, `"document"`, `"debate"`, `"jira"`. Use the `"jira"` mode as the reference implementation for adding a fifth.
+
+**Step 1 — Extend the type**
+
+In `src/components/forum/types.ts`, add the new literal to the `InputMode` union:
+```typescript
+export type InputMode = "text" | "document" | "debate" | "jira" | "mymode";
+```
+
+**Step 2 — Add the input tile**
+
+In `ForumTestUI.tsx`, add a new tile to the input mode selector grid. Follow the pattern of the existing four tiles — each tile sets `setInputMode("mymode")` on click and shows an icon + label.
+
+**Step 3 — Add the pre-session panel (if needed)**
+
+If the mode has a custom pre-session UI (like `JiraInputPanel` for `"jira"` mode), create `src/components/forum/presession/MyModePanel.tsx`. The panel must:
+- Accept an `onReady(input: string, context?: Record<string, unknown>) => void` callback
+- Not hold session state — hand off to `ForumTestUI` via the callback
+- Include `x-arboard-key` on any internal `fetch()` calls
+
+**Step 4 — Wire into ForumOrchestrator (if the mode changes orchestration)**
+
+If the new mode changes how agents run (e.g. skipping certain agents, different prompt injection), add a branch in `ForumOrchestrator.ts`. Follow the `inputMode === "debate"` pattern — check `request.inputMode` and adjust agent behaviour before Phase 1.
+
+**Step 5 — Update agentManifest.json keywords (if applicable)**
+
+If the mode is agent-scoped, ensure the relevant agents have matching `keywords` entries (field name is `keywords`, not `skillKeywords` — see manifest for reference).
+
+---
+
+## GoalOrchestrator pattern
+
+`src/lib/goals/GoalOrchestrator.ts` manages the end-to-end lifecycle for Jira-initiated reviews. Follow this pattern when building any background pipeline that writes to Supabase and updates Jira labels.
+
+**Label lifecycle:**
+```
+Jira: submitted-for-review
+  → GoalOrchestrator.createGoal()
+      writes goals row (status: arb-review-in-progress)
+      calls updateJiraLabels() to swap label on the Jira ticket
+  → GoalOrchestrator.executeGoal()
+      runs full ForumOrchestrator pipeline
+      on success: updates goals row status to "arb-reviewed",  updates Jira label
+      on failure: updates goals row status to "arb-review-failed", writes error_message,
+                  increments retry_count, updates Jira label
+```
+
+**Key invariant — partial unique index:** The `goals` table has a partial unique index preventing two concurrent active goals for the same `jira_issue_key`. Before triggering, check `fetchPendingGoals()` — if a row already exists with status `arb-review-in-progress`, do not create a duplicate.
+
+**Jira API calls** go through `src/lib/integrations/jira.ts`. Use the exported helpers:
+- `getJiraEnv()` — reads and validates `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`
+- `buildJiraHeaders()` — returns the Basic Auth + content-type header object
+- `updateJiraLabels(issueKey, labels)` — PUT to `/rest/api/3/issues/{key}`
+- `postJiraComment(issueKey, body)` — POST ADF comment
+- `searchJql(jql)` — GET `/rest/api/3/search/jql` (not the legacy `/rest/api/3/search`)
+
+Do not construct Jira HTTP calls inline in route handlers — always go through these helpers.
+
+---
+
 ## Pull request checklist
 
 Before opening a PR, confirm all of the following:
@@ -360,6 +450,9 @@ Before opening a PR, confirm all of the following:
 - [ ] If a new failure pattern was added — seed script run (`seed:myagent-patterns`), then `seed:agent` run to embed
 - [ ] If a new agent was added — manifest entry (`agentManifest.json`), prompt file (`src/prompts/agents/`), agent config TS (`src/lib/domains/salesforce/agents/`), registered in `salesforce/index.ts`, and skill file (`src/skills/domains/`) all present
 - [ ] If a new frontend `fetch()` to any `/api/*` route was added — confirm it includes `'x-arboard-key': process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? ''` in the headers (GET and POST). Missing this header returns 401.
+- [ ] If a new input mode was added — `InputMode` union updated in `forum/types.ts`, tile added to selector, pre-session panel in `forum/presession/` if required
+- [ ] If a Supabase schema was changed — migration file added to `supabase/migrations/` and `goals` label lifecycle documented if a new status value was introduced
+- [ ] If any Jira API calls were added — use helpers from `src/lib/integrations/jira.ts` (not inline fetch); use `/rest/api/3/search/jql` not the legacy search endpoint
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
 

@@ -128,11 +128,14 @@ Salesforce cloud-hosted MCP gateway requires Enterprise/Production org with Agen
 ### ADR-006 — Mock/Live API toggle
 Dual API key environment pattern (`ANTHROPIC_API_KEY_MOCK` / `ANTHROPIC_API_KEY_REAL`) preserves demo safety. Mock mode returns cached responses; live mode uses real Anthropic API.
 
-### ADR-008 — x-arboard-key header required on all internal API calls
-Every fetch from the frontend to an `/api/*` route must include the header `x-arboard-key: <NEXT_PUBLIC_ARBOARD_API_KEY>`. This is enforced server-side by `requireApiKey` middleware applied to all API routes. Omitting the header returns 401. All `fetch()` calls in `ForumTestUI.tsx` carry this header — GET calls use a `headers` object, POST calls add it alongside `Content-Type`.
-
 ### ADR-007 — Prompt caching enabled (shipped)
 Anthropic prompt caching (`cache_control: ephemeral`) applied to system prompts in AgentRunner. Cache hit/miss metrics tracked in `UsageData` and surfaced in the session drawer UI.
+
+### ADR-008 — x-arboard-key header required on all internal API calls
+Every fetch from the frontend to an `/api/*` route must include the header `x-arboard-key: <NEXT_PUBLIC_ARBOARD_API_KEY>`. This is enforced server-side by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`) which reads `ARBOARD_API_KEY` (server-side only — not the public env var). Omitting the header returns 401. All `fetch()` calls in `ForumTestUI.tsx` carry this header — GET calls use a `headers` object, POST calls add it alongside `Content-Type`.
+
+### ADR-009 — Jira Review Queue input mode and Goals pipeline (July 2026)
+A fourth input mode (`"jira"`) allows ARBoard to pull Jira tickets labelled `submitted-for-review` from the ARBOARD project and run them through the full agent pipeline without manual SDD upload. The `GoalOrchestrator` manages the lifecycle: on trigger, it creates a row in the `goals` Supabase table, updates the Jira label to `arb-review-in-progress`, runs the forum pipeline, then sets the label to `arb-reviewed` (or `arb-review-failed` on error). A partial unique index on `goals` prevents duplicate concurrent goals for the same Jira issue. The Jira search API is called via `/rest/api/3/search/jql` (migrated from the legacy `/rest/api/3/search` endpoint).
 
 ---
 
@@ -194,6 +197,20 @@ Supabase session telemetry (sessions + signoffs tables)
 | `org_learnings` | Cross-session learnings captured by sf-learner — source of truth; embeddings mirrored into grounding_embeddings |
 | `sessions` | Session telemetry — tokens, cost, duration, model, agent count |
 | `signoffs` | Per-agent verdict records tied to session |
+| `goals` | Jira-initiated review pipeline records. Columns: `id`, `jira_issue_key`, `jira_issue_id`, `jira_issue_summary`, `attachment_id`, `attachment_name`, `attachment_url`, `status`, `triggered_by`, `session_id` (nullable FK → sessions), `retry_count`, `error_message`, `created_at`, `updated_at`. Partial unique index: one active goal per `jira_issue_key` at a time (status NOT IN ('arb-reviewed', 'arb-review-failed')). Migration: `supabase/migrations/20260713000002_goals.sql`. |
+
+### goals label lifecycle
+
+```
+Jira label: submitted-for-review
+       ↓  (GoalOrchestrator.createGoal + POST /api/v1/goals/trigger)
+goals row created, status = "arb-review-in-progress"
+Jira label updated: arb-review-in-progress
+       ↓  (full forum pipeline via ForumOrchestrator)
+success → status = "arb-reviewed",  Jira label = arb-reviewed
+failure → status = "arb-review-failed", Jira label = arb-review-failed
+          error_message written, retry_count incremented
+```
 
 ---
 
@@ -268,6 +285,26 @@ At query time `ragRetriever.ts` embeds the SDD (`input_type: query`) and runs pg
 
 ---
 
+## API Routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/api/forum` | Streaming SSE forum session entry point |
+| POST | `/api/analyse` | ImpactAnalyser — score SDD, return agent selection |
+| POST | `/api/upload` | SDD file upload — extract text, detect duplicates |
+| GET | `/api/salesforce/status` | Check Salesforce org connection status |
+| GET | `/api/salesforce/metadata` | Fetch org metadata (objects, limits) |
+| POST | `/api/salesforce/disconnect` | Clear org session |
+| POST | `/api/adr/countersign` | Record architect countersignature on ADR |
+| GET | `/api/v1/goals/pending` | Fetch Jira tickets labelled `submitted-for-review` via `/rest/api/3/search/jql` |
+| POST | `/api/v1/goals/trigger` | Create `goals` row + kick off background pipeline for a Jira ticket |
+| GET | `/api/v1/goals` | Goals history (all rows from `goals` table) |
+| GET | `/api/v1/goals/download` | Proxy attachment bytes from Jira (streams attachment content to client) |
+
+All routes are protected by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`).
+
+---
+
 ## Repository Structure (key files)
 
 ```
@@ -279,8 +316,16 @@ src/
       ForumOrchestrator.ts       — main session orchestration, grounding assembly
     agents/
       AgentRunner.ts             — per-agent execution, failure pattern injection, prompt caching
+    auth/
+      requireApiKey.ts           — server-side API key check (reads ARBOARD_API_KEY)
     config/
       manifestLoader.ts          — reads agentManifest.json, filters enabled agents
+    goals/
+      GoalOrchestrator.ts        — createGoal, executeGoal, fetchPendingGoals, getGoalsHistory
+                                   manages goals table lifecycle + Jira label transitions
+    integrations/
+      jira.ts                    — Jira client: getJiraEnv, buildJiraHeaders, updateJiraLabels,
+                                   postJiraComment, createADRIssue, searchJql (uses /rest/api/3/search/jql)
     rag/
       ragRetriever.ts            — Voyage AI embed → pgvector similarity search
     skills/
@@ -298,6 +343,21 @@ src/
       salesforce/
         index.ts                 — domain config, _agentLookup, getEnabledAgents() wiring
         agents/                  — one .ts file per agent (createBaseAgent + _sec() prompt parser)
+  components/
+    ForumTestUI.tsx              — root UI component; inputMode: "text"|"document"|"debate"|"jira"
+    forum/
+      types.ts                   — shared TypeScript types (AgentOutput, DissentData, etc.)
+      constants.ts               — AGENT_META, ALWAYS_ON_IDS, CLOSING_AGENT_IDS, ARCHITECT_ROLES
+      utils.ts                   — parseVerdict, parseConfidence, parseJudgeConfidenceLevel,
+                                   parseHumanJudgementPoints, computeRoi, formatBytes, etc.
+      styles.ts                  — shared inline style tokens (S.label, S.card, etc.)
+      primitives/
+        Chip.tsx                 — coloured label chip
+        ConfidenceBar.tsx        — horizontal confidence bar
+        SectionDivider.tsx       — labelled horizontal rule
+        MarkdownOutput.tsx       — markdown renderer for agent output
+      presession/
+        JiraInputPanel.tsx       — Jira queue panel: fetches pending tickets, triggers goal pipeline
   prompts/
     agents/                      — per-agent system prompt .md files (## Role/Expertise/Guardrails/…)
   skills/
@@ -310,14 +370,19 @@ src/
     seedJiraADRs.ts              — offline embed: all real Jira ADRs (project: ARBOARD)
   app/
     api/
-      forum/route.ts             — streaming API entry point
+      forum/route.ts             — streaming SSE entry point
+      analyse/route.ts           — ImpactAnalyser endpoint
+      upload/route.ts            — file upload + text extraction
+      adr/countersign/route.ts   — countersignature endpoint
+      salesforce/                — status / metadata / disconnect routes
+      v1/goals/                  — goals CRUD + trigger + download routes
 scripts/                         — root-level seed scripts (agent-scoped pattern seeders + generic seeder)
   seed-agent.ts                  — generic per-agent seeder: skill file chunks + failure patterns (primary workflow)
   seed-perm-patterns.ts          — seeds PERM-001–PERM-008 into failure_patterns + grounding_embeddings
   seed-agentforce-patterns.ts    — seeds FP-013–FP-020 into failure_patterns + grounding_embeddings
   update-fp-sources.ts           — one-off migration: sets source field on FP-004–FP-020 to agent IDs
 supabase/
-  migrations/                    — schema migrations
+  migrations/                    — schema migrations (20260713000002_goals.sql adds goals table)
 ```
 
 ---
@@ -329,4 +394,4 @@ supabase/
 
 ---
 
-*Last updated: July 2026 — ADR-008 added; dissent pipeline designer-skip guard documented*
+*Last updated: July 2026 — ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration; ADR ordering corrected*
