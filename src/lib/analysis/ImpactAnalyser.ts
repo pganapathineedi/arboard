@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { getLLMProvider } from "@/lib/llm";
 import type { AgentActivation, ImpactAnalysis } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
@@ -76,25 +76,23 @@ export class ImpactAnalyser {
       };
     }
 
-    const anthropic = new Anthropic();
     const orgBlock = orgContext ? PromptBuilder.buildOrgContextBlock(orgContext) : "";
     const userContent = orgBlock
       ? `${orgBlock}\n\nREQUIREMENT TO ANALYSE:\nGiven this requirement AND the actual org state above, identify which agents are needed and what SPECIFIC risks exist given the real data volumes, existing automation, and current limits.\n\n${input}`
       : `Analyse this Salesforce requirement and determine which specialist agents to activate:\n\n${input}`;
 
-    const response = await anthropic.messages.create({
+    const { text } = await getLLMProvider().complete({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 4000,
+      maxTokens: 4000,
       system: ANALYSER_SYSTEM,
       messages: [{ role: "user", content: userContent }],
     });
 
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text" || !textBlock.text) {
+    if (!text) {
       throw new Error("ImpactAnalyser: no text response returned from Claude");
     }
 
-    const cleaned = textBlock.text.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
     const raw = JSON.parse(cleaned) as {
       summary: string;
       overallRisk: string;

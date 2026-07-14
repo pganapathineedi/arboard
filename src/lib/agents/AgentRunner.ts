@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { AgentConfig, AgentResult, ClientContext, MiddlewareContext } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
+import { getLLMProvider } from "@/lib/llm";
+import type { LLMMessage } from "@/lib/llm";
 import { PromptBuilder } from "@/lib/prompt/PromptBuilder";
 import { defaultPipeline } from "@/lib/middleware";
 import { mockStream, getMockResponse } from "@/lib/mock/mockMode";
@@ -34,7 +35,6 @@ export class AgentRunner {
       return;
     }
 
-    const anthropic = new Anthropic();
     let systemPrompt = PromptBuilder.buildSystemPrompt(agent, clientContext, undefined, orgContext);
 
     const patterns = await getRelevantPatterns(agent.id);
@@ -57,11 +57,11 @@ export class AgentRunner {
     const finalCtx = await defaultPipeline(middlewareCtx, async () => middlewareCtx);
 
     const visionImages = finalCtx.metadata.embeddedImages as Array<{ name: string; mediaType: string; base64: string }> | undefined;
-    const userContent: Anthropic.MessageParam["content"] = visionImages?.length
+    const userContent: LLMMessage["content"] = visionImages?.length
       ? [
           ...visionImages.map(img => ({
             type: "image" as const,
-            source: { type: "base64" as const, media_type: img.mediaType as Anthropic.Base64ImageSource["media_type"], data: img.base64 },
+            source: { type: "base64" as const, media_type: img.mediaType, data: img.base64 },
           })),
           { type: "text" as const, text: "The above are architecture diagrams embedded in the submitted design document. Review them for correctness and flag any inconsistencies with the text design." },
           { type: "text" as const, text: finalCtx.input },
@@ -71,40 +71,20 @@ export class AgentRunner {
     console.log('[agent] model:', agent.model, 'maxTokens:', agent.maxTokens);
     console.log('[agent] systemPrompt length:', finalCtx.systemPrompt?.length);
 
-    const stream = anthropic.messages.stream({
-      model: agent.model,
-      max_tokens: agent.maxTokens,
-      temperature: agent.temperature ?? 0.3,
-      system: [{ type: "text", text: finalCtx.systemPrompt, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userContent }],
-    });
-
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let cacheReadTokens = 0;
-    let cacheWriteTokens = 0;
-
     try {
-      for await (const event of stream) {
-        if (event.type === "message_start") {
-          inputTokens = event.message.usage.input_tokens;
-          cacheReadTokens = (event.message.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0;
-          cacheWriteTokens = (event.message.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0;
-        } else if (event.type === "message_delta") {
-          outputTokens = event.usage.output_tokens;
-        } else if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          yield event.delta.text;
-        }
+      for await (const chunk of getLLMProvider().stream({
+        model: agent.model,
+        maxTokens: agent.maxTokens,
+        temperature: agent.temperature ?? 0.3,
+        system: [{ type: "text", text: finalCtx.systemPrompt, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userContent }],
+      })) {
+        yield chunk;
       }
     } catch (err) {
       console.error('[agent] stream error for', agent.id, ':', err);
       throw err;
     }
-
-    yield { __usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } };
   }
 
   static async run(

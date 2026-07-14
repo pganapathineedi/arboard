@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
+import { getLLMProvider } from "@/lib/llm";
 import type { AgentConfig, ClientContext, DomainConfig, ForumRequest } from "@/lib/types";
 import type { OrgContext } from "@/lib/types/salesforce";
 import { getDomain } from "@/lib/domains/salesforce";
@@ -638,10 +638,9 @@ export class ForumOrchestrator {
               ...specialistOutputs.map(s => `### ${s.agentName}\n${s.content}`),
             ].join("\n\n---\n\n");
 
-            const client = new Anthropic();
-            const response = await client.messages.create({
+            const { text: dissentText } = await getLLMProvider().complete({
               model: "claude-haiku-4-5-20251001",
-              max_tokens: 1000,
+              maxTokens: 1000,
               system: "You are a dissent analyser. Given outputs from specialist architecture agents and a Judge verdict, extract each agent's position. Return ONLY valid JSON, no markdown, no preamble.",
               messages: [{
                 role: "user",
@@ -671,7 +670,7 @@ ${agentOutputsText}`,
               }],
             });
 
-            const rawText = response.content[0]?.type === "text" ? response.content[0].text : "{}";
+            const rawText = dissentText || "{}";
             const raw = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             try {
               dissentPayload = JSON.parse(raw);

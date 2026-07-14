@@ -1,16 +1,15 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { getLLMProvider } from "@/lib/llm";
 
 // ~4000 tokens ≈ 16 000 chars. Docs under this threshold go straight through.
 const PASS_THROUGH_CHARS = 16_000;
 // Each chunk ≈ 3000 tokens so Haiku can produce a 600-token summary comfortably.
 const CHUNK_SIZE = 12_000;
 
-const anthropic = new Anthropic();
-
 async function summariseChunk(chunk: string, index: number, total: number): Promise<string> {
-  const res = await anthropic.messages.create({
+  const provider = getLLMProvider();
+  const { text } = await provider.complete({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 600,
+    maxTokens: 600,
     messages: [
       {
         role: "user",
@@ -22,15 +21,15 @@ async function summariseChunk(chunk: string, index: number, total: number): Prom
       },
     ],
   });
-  const block = res.content[0];
-  return block.type === "text" ? block.text : "";
+  return text;
 }
 
 async function finalMerge(summaries: string[]): Promise<string> {
   const combined = summaries.join("\n\n---\n\n");
-  const res = await anthropic.messages.create({
+  const provider = getLLMProvider();
+  const { text } = await provider.complete({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2000,
+    maxTokens: 2000,
     messages: [
       {
         role: "user",
@@ -42,8 +41,7 @@ async function finalMerge(summaries: string[]): Promise<string> {
       },
     ],
   });
-  const block = res.content[0];
-  return block.type === "text" ? block.text : combined;
+  return text || combined;
 }
 
 export async function maybeSummarise(text: string): Promise<{ text: string; wasChunked: boolean }> {
