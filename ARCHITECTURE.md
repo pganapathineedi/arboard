@@ -28,6 +28,30 @@ ARBoard automates the Salesforce Architecture Review Board process using a multi
 
 ---
 
+## Environment Variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `LLM_PROVIDER` | No | LLM implementation: `anthropic` (default) or `bedrock` |
+| `AWS_REGION` | bedrock only | AWS region for Bedrock calls (e.g. `us-east-1`) |
+| `AWS_ACCESS_KEY_ID` | bedrock only | AWS credentials for Bedrock |
+| `AWS_SECRET_ACCESS_KEY` | bedrock only | AWS credentials for Bedrock |
+| `ANTHROPIC_API_KEY` | anthropic only | Anthropic API key |
+| `ANTHROPIC_API_KEY_MOCK` | dev | Mock API key for demo safety (ADR-006) |
+| `ANTHROPIC_API_KEY_REAL` | dev | Real API key for mock/live toggle (ADR-006) |
+| `SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (server-side) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase URL (client-side) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key (client-side) |
+| `VOYAGE_API_KEY` | Yes | Voyage AI embeddings key |
+| `JIRA_BASE_URL` | Yes | Jira instance base URL |
+| `JIRA_EMAIL` | Yes | Jira account email (Basic Auth) |
+| `JIRA_API_TOKEN` | Yes | Jira API token |
+| `ARBOARD_API_KEY` | Yes | Server-side API key (read by `requireApiKey` middleware) |
+| `NEXT_PUBLIC_ARBOARD_API_KEY` | Yes | Client-side value sent as `x-arboard-key` header |
+
+---
+
 ## Agent Roster
 
 Specialist agents run sequentially. Each receives the SDD, a domain-specific system prompt, and injected context from all grounding layers.
@@ -135,7 +159,9 @@ Anthropic prompt caching (`cache_control: ephemeral`) applied to system prompts 
 Every fetch from the frontend to an `/api/*` route must include the header `x-arboard-key: <NEXT_PUBLIC_ARBOARD_API_KEY>`. This is enforced server-side by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`) which reads `ARBOARD_API_KEY` (server-side only — not the public env var). Omitting the header returns 401. All `fetch()` calls in `ForumTestUI.tsx` carry this header — GET calls use a `headers` object, POST calls add it alongside `Content-Type`.
 
 ### ADR-010 — LLM abstraction layer (`src/lib/llm/`)
-All Anthropic SDK calls are routed through a `LLMProvider` interface backed by `AnthropicProvider`. Call sites use `getLLMProvider()` from `@/lib/llm` — never `new Anthropic()` directly. Two call patterns: `complete()` (one-shot, returns `{ text, usage }`) and `stream()` (yields string tokens then a terminal `{ __usage: LLMUsage }` sentinel). The `AnthropicProvider` lazy-inits the Anthropic client inside each call — never at module level. Mock-mode guards remain in each call site, above the provider layer. `LLM_PROVIDER` env var selects the implementation; only `anthropic` is currently supported.
+All LLM calls are routed through a `LLMProvider` interface. Call sites use `getLLMProvider()` from `@/lib/llm` — never `new Anthropic()` directly. Two call patterns: `complete()` (one-shot, returns `{ text, usage }`) and `stream()` (yields string tokens then a terminal `{ __usage: LLMUsage }` sentinel). The `AnthropicProvider` lazy-inits the Anthropic client inside each call — never at module level. `BedrockProvider` wraps the AWS Bedrock SDK and handles model ID translation (Anthropic model IDs → Bedrock cross-region inference profile ARNs, e.g. `claude-haiku-4-5-20251001` → `us.anthropic.claude-haiku-4-5-20251001-v1:0`). Mock-mode guards remain in each call site, above the provider layer. `LLM_PROVIDER` env var selects the implementation (`anthropic` | `bedrock`).
+
+Four files in `src/lib/llm/`: `types.ts` (shared request/response types), `LLMProvider.ts` (interface), `AnthropicProvider.ts` (Anthropic SDK), `BedrockProvider.ts` (AWS Bedrock SDK). Factory in `index.ts` reads `LLM_PROVIDER` and returns the appropriate implementation.
 
 Migrated files: `AgentRunner.ts` (streaming), `ImpactAnalyser.ts`, `ForumOrchestrator.ts` (dissent analysis), `DocumentChunker.ts` (summarisation).
 
@@ -318,9 +344,10 @@ src/
     agentManifest.json           — agent registry: IDs, names, skillKeywords, enabled flags
   lib/
     llm/
-      index.ts                   — getLLMProvider() factory; re-exports all LLM types
+      index.ts                   — getLLMProvider() factory; reads LLM_PROVIDER env var; re-exports types
       LLMProvider.ts             — LLMProvider interface (complete + stream)
       AnthropicProvider.ts       — Anthropic SDK implementation (lazy client init per call)
+      BedrockProvider.ts         — AWS Bedrock implementation; Anthropic→Bedrock model ID translation
       types.ts                   — LLMMessage, LLMCompleteRequest, LLMStreamRequest, LLMUsage, etc.
     orchestrator/
       ForumOrchestrator.ts       — main session orchestration, grounding assembly

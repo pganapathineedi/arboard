@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "arboard": {
+      "url": "https://arboard.vercel.app/api/mcp",
+      "headers": {
+        "x-arboard-key": "YOUR_ARBOARD_API_KEY"
+      },
+      "description": "ARBoard — Salesforce Architecture Review Board. Multi-agent AI review of solution design documents."
+    }
+  }
+}

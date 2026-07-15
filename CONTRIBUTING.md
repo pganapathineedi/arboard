@@ -24,6 +24,7 @@ ARBoard is a deliberative multi-agent architecture review system. Contributions 
 
 - Clone the repo and run `npm install`
 - Copy `.env.local.example` to `.env.local` and fill in your keys (Anthropic, Supabase, Voyage AI, Jira)
+- Set `LLM_PROVIDER=anthropic` in `.env.local` (default; use `bedrock` to route calls through AWS Bedrock — also requires `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
 - Run `npx next dev` and confirm the UI loads at `http://localhost:3000`
 - Run `npx tsc --noEmit` — all contributions must pass with zero type errors
 
@@ -507,6 +508,7 @@ Before opening a PR, confirm all of the following:
 - [ ] If a Supabase schema was changed — migration file added to `supabase/migrations/` and `goals` label lifecycle documented if a new status value was introduced
 - [ ] If any Jira API calls were added — use helpers from `src/lib/integrations/jira.ts` (not inline fetch); use `/rest/api/3/search/jql` not the legacy search endpoint
 - [ ] If any LLM calls were added — use `getLLMProvider()` from `@/lib/llm`, not `new Anthropic()` directly; mock guard lives in the call site above the provider; no SDK clients constructed at module level
+- [ ] If adding a new LLM provider — implement `LLMProvider` interface in `src/lib/llm/`, add case to `getLLMProvider()` factory in `index.ts`, add model ID mapping if the provider uses different ID formats than Anthropic's
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
 
