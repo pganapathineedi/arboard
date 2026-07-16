@@ -15,8 +15,9 @@ ARBoard is a deliberative multi-agent architecture review system. Contributions 
 7. [Adding a new input mode](#adding-a-new-input-mode)
 8. [GoalOrchestrator pattern](#goalorchestrator-pattern)
 9. [Using the LLM abstraction layer](#using-the-llm-abstraction-layer)
-10. [Pull request checklist](#pull-request-checklist)
-11. [Things you must never do](#things-you-must-never-do)
+10. [Adding an MCP tool](#adding-an-mcp-tool)
+11. [Pull request checklist](#pull-request-checklist)
+12. [Things you must never do](#things-you-must-never-do)
 
 ---
 
@@ -494,6 +495,29 @@ for await (const chunk of getLLMProvider().stream({
 
 ---
 
+## Adding an MCP tool
+
+The MCP server lives in `src/app/api/mcp/route.ts`. It is a stateless HTTP server — no SSE transport, no session state. Clients POST `{ "method": "tools/list" }` or `{ "method": "tools/call", "params": { "name": "...", "arguments": {...} } }` and block until the response is ready.
+
+**Auth:** The MCP endpoint uses `requireApiKey` (`x-arboard-key` header), not `validateExternalApiKey`. MCP clients configure the header in `mcp-config.json`. Do not switch to `validateExternalApiKey` — MCP clients do not have Supabase `api_keys` rows.
+
+**To add a new MCP tool:**
+
+1. Add the tool definition to `TOOL_DEFINITIONS` in `route.ts` — follow the existing `inputSchema` shape.
+2. Add a handler function `callMyTool(args)` in the same file. Keep it focused: one function per tool.
+3. Add a dispatch case in the `tools/call` block:
+   ```typescript
+   if (toolName === 'my_tool') return await callMyTool(args)
+   ```
+4. Update `MCP.md` with the new tool's input/output spec and an example.
+
+**Key constraints:**
+- `maxDuration` is 300s — the full agent pipeline takes 60–180s in live mode. Do not add tools that require longer timeouts without adjusting this.
+- Tools that drive `ForumOrchestrator.streamForum` must consume the full async generator — do not break early or the session telemetry write in `saveADR` will not complete.
+- The `pending_endorsement` SSE event carries the final parsed verdict, confidence level, and must-fix items. Prefer consuming this event over re-parsing judge content.
+
+---
+
 ## Pull request checklist
 
 Before opening a PR, confirm all of the following:
@@ -509,6 +533,7 @@ Before opening a PR, confirm all of the following:
 - [ ] If any Jira API calls were added — use helpers from `src/lib/integrations/jira.ts` (not inline fetch); use `/rest/api/3/search/jql` not the legacy search endpoint
 - [ ] If any LLM calls were added — use `getLLMProvider()` from `@/lib/llm`, not `new Anthropic()` directly; mock guard lives in the call site above the provider; no SDK clients constructed at module level
 - [ ] If adding a new LLM provider — implement `LLMProvider` interface in `src/lib/llm/`, add case to `getLLMProvider()` factory in `index.ts`, add model ID mapping if the provider uses different ID formats than Anthropic's
+- [ ] If a new MCP tool was added — tool definition added to `TOOL_DEFINITIONS` in `src/app/api/mcp/route.ts`, handler function added, `MCP.md` updated with input/output spec
 - [ ] PR description explains what changed and why
 - [ ] No secrets, API keys, or `.env.local` contents committed
 

@@ -165,6 +165,9 @@ Four files in `src/lib/llm/`: `types.ts` (shared request/response types), `LLMPr
 
 Migrated files: `AgentRunner.ts` (streaming), `ImpactAnalyser.ts`, `ForumOrchestrator.ts` (dissent analysis), `DocumentChunker.ts` (summarisation).
 
+### ADR-011 — HTTP MCP server at `/api/mcp` (July 2026)
+ARBoard exposes its architecture review capability as a stateless HTTP MCP server. Two tools are available: `review_document` drives `ForumOrchestrator.streamForum` directly (same pipeline as the web UI) and collects the `pending_endorsement` SSE event to assemble a structured verdict response; `get_session` queries the `sessions` + `adrs` Supabase tables to retrieve telemetry and must-fix items for a completed session. Auth: `requireApiKey` middleware (`x-arboard-key` header) — the same key used by the web UI. Client configuration: `mcp-config.json` (project root) and `MCP.md` (setup guide). The server does not maintain state between requests and does not implement SSE transport — callers block until the full pipeline completes (`maxDuration: 300`).
+
 ### ADR-009 — Jira Review Queue input mode and Goals pipeline (July 2026)
 A fourth input mode (`"jira"`) allows ARBoard to pull Jira tickets labelled `submitted-for-review` from the ARBOARD project and run them through the full agent pipeline without manual SDD upload. The `GoalOrchestrator` manages the lifecycle: on trigger, it creates a row in the `goals` Supabase table, updates the Jira label to `arb-review-in-progress`, runs the forum pipeline, then sets the label to `arb-reviewed` (or `arb-review-failed` on error). A partial unique index on `goals` prevents duplicate concurrent goals for the same Jira issue. The Jira search API is called via `/rest/api/3/search/jql` (migrated from the legacy `/rest/api/3/search` endpoint).
 
@@ -331,8 +334,9 @@ At query time `ragRetriever.ts` embeds the SDD (`input_type: query`) and runs pg
 | POST | `/api/v1/goals/trigger` | Create `goals` row + kick off background pipeline for a Jira ticket |
 | GET | `/api/v1/goals` | Goals history (all rows from `goals` table) |
 | GET | `/api/v1/goals/download` | Proxy attachment bytes from Jira (streams attachment content to client) |
+| POST | `/api/mcp` | Stateless HTTP MCP server — `tools/list` returns available tools; `tools/call` dispatches `review_document` (full agent pipeline) or `get_session` (session + ADR lookup) |
 
-All routes are protected by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`).
+All routes are protected by `requireApiKey` middleware (`src/lib/auth/requireApiKey.ts`). Exception: `/api/v1/review` uses `validateExternalApiKey` (`src/lib/auth/externalApiAuth.ts`) which validates against the `api_keys` Supabase table via `x-api-key` header.
 
 ---
 
@@ -413,6 +417,7 @@ src/
       adr/countersign/route.ts   — countersignature endpoint
       salesforce/                — status / metadata / disconnect routes
       v1/goals/                  — goals CRUD + trigger + download routes
+      mcp/route.ts               — stateless HTTP MCP server; tools: review_document, get_session
 scripts/                         — root-level seed scripts (agent-scoped pattern seeders + generic seeder)
   seed-agent.ts                  — generic per-agent seeder: skill file chunks + failure patterns (primary workflow)
   seed-perm-patterns.ts          — seeds PERM-001–PERM-008 into failure_patterns + grounding_embeddings
@@ -420,6 +425,8 @@ scripts/                         — root-level seed scripts (agent-scoped patte
   update-fp-sources.ts           — one-off migration: sets source field on FP-004–FP-020 to agent IDs
 supabase/
   migrations/                    — schema migrations (20260713000002_goals.sql adds goals table)
+mcp-config.json                  — MCP client configuration template (arboard server URL + x-arboard-key header)
+MCP.md                           — MCP integration guide: Claude Desktop, Claude Code, tool reference, endpoint spec
 ```
 
 ---
@@ -431,4 +438,4 @@ supabase/
 
 ---
 
-*Last updated: July 2026 — ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration*
+*Last updated: July 2026 — ADR-011 (HTTP MCP server, src/app/api/mcp/route.ts, mcp-config.json, MCP.md); ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration*
