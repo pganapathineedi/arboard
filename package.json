@@ -2,16 +2,17 @@
   "name": "arboard",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "seed:perm-patterns": "npx ts-node --project tsconfig.json scripts/seed-perm-patterns.ts",
-    "seed:agent": "npx ts-node --project tsconfig.json scripts/seed-agent.ts",
-    "update:fp-sources": "npx ts-node --project tsconfig.json scripts/update-fp-sources.ts",
-    "seed:agentforce-patterns": "npx ts-node --project tsconfig.json scripts/seed-agentforce-patterns.ts"
-  },
+"scripts": {
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint",
+  "seed:perm-patterns": "npx ts-node --project tsconfig.json scripts/seed-perm-patterns.ts",
+  "seed:agent": "npx ts-node --project tsconfig.json scripts/seed-agent.ts",
+  "update:fp-sources": "npx ts-node --project tsconfig.json scripts/update-fp-sources.ts",
+  "seed:agentforce-patterns": "npx ts-node --project tsconfig.json scripts/seed-agentforce-patterns.ts",
+  "build:mcp": "tsc --project tsconfig.mcp.json"
+},
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1086.0",

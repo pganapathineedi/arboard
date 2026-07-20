@@ -1,5 +1,15 @@
 import type { ImpactAnalysis } from "@/lib/types";
 
+export interface DeliveryEstimate {
+  dimensions: {
+    traditional: { weeks: number; cost: number };
+    aiAugmented: { weeks: number; cost: number };
+    aiNative:    { weeks: number; cost: number };
+  };
+  confidence: { range: number };
+  phases: Array<{ name: string; traditional: number; aiAugmented: number }>;
+}
+
 export interface AgentOutput {
   agentId: string;
   agentName: string;
@@ -60,6 +70,8 @@ export interface SSEEvent {
   dissent_summary?: string;
   total_dissenting?: number;
   agents?: DissentAgent[];
+  // delivery_estimate fields
+  deliveryEstimate?: DeliveryEstimate;
 }
 
 export interface PendingEndorsement {

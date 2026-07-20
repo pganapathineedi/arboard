@@ -16,8 +16,9 @@ ARBoard is a deliberative multi-agent architecture review system. Contributions 
 8. [GoalOrchestrator pattern](#goalorchestrator-pattern)
 9. [Using the LLM abstraction layer](#using-the-llm-abstraction-layer)
 10. [Adding an MCP tool](#adding-an-mcp-tool)
-11. [Pull request checklist](#pull-request-checklist)
-12. [Things you must never do](#things-you-must-never-do)
+11. [Estimator integration](#estimator-integration)
+12. [Pull request checklist](#pull-request-checklist)
+13. [Things you must never do](#things-you-must-never-do)
 
 ---
 
@@ -515,6 +516,26 @@ The MCP server lives in `src/app/api/mcp/route.ts`. It is a stateless HTTP serve
 - `maxDuration` is 300s — the full agent pipeline takes 60–180s in live mode. Do not add tools that require longer timeouts without adjusting this.
 - Tools that drive `ForumOrchestrator.streamForum` must consume the full async generator — do not break early or the session telemetry write in `saveADR` will not complete.
 - The `pending_endorsement` SSE event carries the final parsed verdict, confidence level, and must-fix items. Prefer consuming this event over re-parsing judge content.
+
+---
+
+## Estimator integration
+
+### To update the estimator URL
+
+Edit `ESTIMATOR_URL` in `.env.local`. No code changes needed.
+
+### To disable the estimator integration
+
+Remove `ESTIMATOR_URL` from `.env.local`. The forum pipeline checks for the variable's presence before calling the API and will skip the estimate gracefully if it is absent.
+
+### To change what agents see
+
+Edit the `buildDeliveryContextBlock()` function in `src/lib/orchestrator/ForumOrchestrator.ts`. Look for the comment `## DELIVERY CONTEXT` — that string is the section heading injected into every specialist agent's memory block.
+
+### To change the UI card
+
+Edit `DeliveryEstimateCard` in `src/components/ForumTestUI.tsx`. The component receives the full `DeliveryEstimate` object (type defined in `src/components/forum/types.ts`) and renders the three delivery dimensions plus a link to the estimator.
 
 ---
 

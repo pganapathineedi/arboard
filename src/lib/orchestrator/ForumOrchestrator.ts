@@ -15,6 +15,43 @@ import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoade
 import { SessionTracer } from '@/lib/tracing/SessionTracer'
 import { validateAgentOutput, type ValidationResult } from '@/lib/validation/agentOutputSchema'
 
+// ── Delivery Estimator types & helpers ────────────────────────────────────────
+
+interface EstimatorResponse {
+  dimensions: {
+    traditional: { weeks: number; cost: number };
+    aiAugmented: { weeks: number; cost: number };
+    aiNative:    { weeks: number; cost: number };
+  };
+  confidence: { range: number };
+  phases: Array<{ name: string; traditional: number; aiAugmented: number }>;
+}
+
+function fmtK(n: number): string {
+  return n >= 1_000 ? `${Math.round(n / 1_000)}k` : String(Math.round(n));
+}
+
+function buildDeliveryContextBlock(est: EstimatorResponse): string {
+  const { dimensions: d, confidence, phases } = est;
+  const top = [...phases].sort((a, b) => b.traditional - a.traditional).slice(0, 3);
+  return [
+    '## DELIVERY CONTEXT (from AI Estimator)',
+    'If this design is approved and built:',
+    `  Traditional delivery: ${d.traditional.weeks}wks · $${fmtK(d.traditional.cost)}`,
+    `  AI Augmented:         ${d.aiAugmented.weeks}wks · $${fmtK(d.aiAugmented.cost)} (recommended)`,
+    `  AI Native:            ${d.aiNative.weeks}wks · $${fmtK(d.aiNative.cost)}`,
+    `  Confidence: ±${confidence.range}%`,
+    '',
+    'Highest effort phases:',
+    ...top.map(p => `  - ${p.name}: ${p.traditional}d traditional → ${p.aiAugmented}d AI Augmented`),
+    '',
+    'When reviewing this design, consider:',
+    '  1. Does the design add unnecessary complexity to high-effort phases?',
+    `  2. Are integration points well-defined enough to reduce the ±${confidence.range}% uncertainty?`,
+    '  3. Would simplifying any component reduce delivery risk significantly?',
+  ].join('\n');
+}
+
 const DESIGNER_ID = "sf-designer";
 const CLOSING_IDS = new Set(["sf-judge", "sf-scribe", "sf-learner"]);
 const JUDGE_MAX_TOKENS = 8000;
@@ -279,6 +316,21 @@ export class ForumOrchestrator {
       } catch {
         console.warn(`[forum] Could not fetch prior ticket ${request.priorTicket} — continuing without it`);
       }
+    }
+
+    // ── Delivery Estimator (provided by client from upload step) ─────────────
+    const deliveryEstimate = (request.deliveryEstimate as EstimatorResponse | null | undefined) ?? null;
+
+    // Inject delivery context into all agent memory blocks (skip utility agents)
+    if (deliveryEstimate) {
+      const deliveryBlock = buildDeliveryContextBlock(deliveryEstimate);
+      for (const agent of domain.agents) {
+        if (agent.id === 'sf-scribe' || agent.id === 'sf-learner') continue;
+        memoryBlocks[agent.id] = memoryBlocks[agent.id]
+          ? memoryBlocks[agent.id] + '\n\n' + deliveryBlock
+          : deliveryBlock;
+      }
+      console.log('[estimator] delivery context injected into agent memory blocks');
     }
 
     // ── Impact Analysis ───────────────────────────────────────────────────────

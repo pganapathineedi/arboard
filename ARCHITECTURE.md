@@ -173,6 +173,45 @@ A fourth input mode (`"jira"`) allows ARBoard to pull Jira tickets labelled `sub
 
 ---
 
+## AI Delivery Estimator Integration
+
+ARBoard integrates with the AI Delivery Estimator to provide delivery feasibility context alongside architecture quality reviews.
+
+### Flow
+
+1. User uploads SDD
+2. `ForumOrchestrator` calls the Estimator API **before** agents start deliberating
+3. Estimate injected into each specialist agent's memory block as `## DELIVERY CONTEXT`
+4. Agents review design quality AND delivery feasibility
+5. Judge verdict includes both quality and effort signal
+6. `DeliveryEstimateCard` shown in UI after verdict
+
+### API call
+
+```
+POST https://[ESTIMATOR_URL]/api/v1/estimate
+Headers: x-api-key: ESTIMATOR_API_KEY
+Body:    { client, cr, level: "cr", options: { runClaudeAnalysis: false } }
+```
+
+`runClaudeAnalysis: false` means the estimator runs a pure benchmark calculation — no Claude API calls are consumed for this integration.
+
+### Environment variables required
+
+| Variable | Purpose |
+|---|---|
+| `ESTIMATOR_API_KEY` | API key for the estimator service |
+| `ESTIMATOR_URL` | Base URL of the estimator deployment |
+
+### Graceful degradation
+
+If the estimator is unavailable or times out (8 s timeout, `AbortController`):
+- Forum pipeline continues normally without delivery context
+- Warning logged to console; no error surfaced to the user
+- Agents run without the `## DELIVERY CONTEXT` memory block
+
+---
+
 ## Data Flow
 
 ```
@@ -438,4 +477,4 @@ MCP.md                           — MCP integration guide: Claude Desktop, Clau
 
 ---
 
-*Last updated: July 2026 — ADR-011 (HTTP MCP server, src/app/api/mcp/route.ts, mcp-config.json, MCP.md); ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration*
+*Last updated: July 2026 — AI Delivery Estimator integration (ForumOrchestrator estimator call, DeliveryEstimateCard UI, ESTIMATOR_URL + ESTIMATOR_API_KEY env vars); ADR-011 (HTTP MCP server, src/app/api/mcp/route.ts, mcp-config.json, MCP.md); ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration*

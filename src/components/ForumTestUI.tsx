@@ -13,7 +13,7 @@ import { JiraInputPanel } from "./forum/presession/JiraInputPanel";
 import type {
   AgentOutput, DissentAgent, DissentData, SSEEvent,
   PendingEndorsement, AppliedCtx, ModelId, ChipStatus,
-  RoiComplexity, EstimatePanelProps,
+  RoiComplexity, EstimatePanelProps, DeliveryEstimate,
 } from "./forum/types";
 import {
   MODEL_CONFIG, ALL_AGENT_IDS, AGENT_META, RISK_SEVERITY_COLOR,
@@ -945,6 +945,65 @@ function AgentCard({ agent, sectionLabel, validationPassed }: { agent: AgentOutp
   );
 }
 
+// ── DeliveryEstimateCard ──────────────────────────────────────────────────────
+
+function DeliveryEstimateCard({ estimate }: { estimate: DeliveryEstimate }) {
+  const fmtCost = (n: number) => n >= 1_000 ? `$${Math.round(n / 1_000)}k` : `$${Math.round(n)}`;
+  const { dimensions: d, confidence } = estimate;
+
+  return (
+    <div style={{ ...S.panel, marginTop: 20, overflow: "hidden" }}>
+      <div style={{
+        padding: "12px 18px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        display: "flex", alignItems: "center", gap: 12,
+      }}>
+        <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#F0F4FF" }}>
+          Delivery Estimate (if approved)
+        </span>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0" }}>
+          ±{confidence.range}% confidence
+        </span>
+      </div>
+      <div style={{ padding: "14px 18px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          {([
+            { label: "Traditional",  dim: d.traditional, color: "#7B8DB0", star: false },
+            { label: "AI Augmented", dim: d.aiAugmented,  color: "#00c8f0", star: true  },
+            { label: "AI Native",    dim: d.aiNative,     color: "#0fba7a", star: false },
+          ] as const).map(row => (
+            <div key={row.label} style={{
+              ...S.card, padding: "12px 14px",
+              border: row.star ? "1px solid rgba(0,200,240,0.25)" : undefined,
+              background: row.star ? "rgba(0,200,240,0.04)" : undefined,
+            }}>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#7B8DB0", marginBottom: 6 }}>
+                {row.label}{row.star ? " ★" : ""}
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: row.color }}>
+                {row.dim.weeks}wks
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: row.color, opacity: 0.75 }}>
+                {fmtCost(row.dim.cost)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <a
+            href="https://ai-estimator-theta.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontFamily: "monospace", fontSize: 11, color: "#00c8f0", textDecoration: "none" }}
+          >
+            View full estimate →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── VerdictBox ────────────────────────────────────────────────────────────────
 
 function VerdictBox({
@@ -1510,6 +1569,7 @@ export default function ForumTestUI() {
   const [pendingEndorsement, setPendingEndorsement]   = useState<PendingEndorsement | null>(null);
   const [tokenUsage, setTokenUsage]                   = useState<{ agent: string; input: number; output: number }[]>([]);
   const [dissentData, setDissentData]                 = useState<DissentData | null>(null);
+  const [deliveryEstimate, setDeliveryEstimate]       = useState<DeliveryEstimate | null>(null);
   const [validationMap, setValidationMap]             = useState<Record<string, boolean>>({});
   const [goalTriggerNotice, setGoalTriggerNotice]     = useState<{ issueKey: string; goalId: string } | null>(null);
   const [jiraContext, setJiraContext]                 = useState<{ issueKey: string; summary: string } | null>(null);
@@ -1686,7 +1746,7 @@ export default function ForumTestUI() {
   const handleFileUpload = useCallback(async (file: File) => {
     setUploadError(null); setUploading(true); setUploadResult(null);
     setAppliedCtx(null);  setCtxApplied(false);
-    setDocHash(null); setDupWarning(null);
+    setDocHash(null); setDupWarning(null); setDeliveryEstimate(null);
     const form = new FormData();
     form.append("file", file);
     try {
@@ -1699,6 +1759,19 @@ export default function ForumTestUI() {
       if (json.docHash) setDocHash(json.docHash);
       if (json.duplicate) setDupWarning(json.duplicate);
       setEmbeddedImages(json.embeddedImages ?? []);
+      // Fetch delivery estimate in the background — non-blocking
+      fetch("/api/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-arboard-key": process.env.NEXT_PUBLIC_ARBOARD_API_KEY ?? "" },
+        body: JSON.stringify({
+          client: { name: "Unknown", industry: "commercial", orgComplexity: "moderate", aiMaturity: "walk" },
+          cr: { title: json.filename, description: json.extractedText.slice(0, 3000), complexity: "High" },
+          level: "cr",
+          options: { runClaudeAnalysis: false },
+        }),
+      }).then(r => r.ok ? r.json() : null)
+        .then((est: DeliveryEstimate | null) => { if (est) setDeliveryEstimate(est); })
+        .catch(() => { /* non-fatal — estimate card simply won't appear */ });
     } catch { setUploadError("Upload failed — network error"); }
     finally {
       setUploading(false);
@@ -1730,6 +1803,7 @@ export default function ForumTestUI() {
     setUploadResult(null); setAppliedCtx(null);
     setCtxApplied(false);  setUploadError(null); setInput("");
     setDocHash(null); setDupWarning(null); setEmbeddedImages([]);
+    setDeliveryEstimate(null);
   };
 
   // ── SSE ─────────────────────────────────────────────────────────────────────
@@ -1785,6 +1859,9 @@ export default function ForumTestUI() {
           scribeNotes:          ev.scribeNotes          ?? "",
           mustFixIssues:        ev.mustFixIssues        ?? [],
         });
+        break;
+      case "delivery_estimate":
+        if (ev.deliveryEstimate) setDeliveryEstimate(ev.deliveryEstimate);
         break;
       case "dissent_analysis":
         console.log("[dissent] event received:", ev);
@@ -1875,6 +1952,7 @@ export default function ForumTestUI() {
           documentContent: !!uploadResult,
           docHash: docHash ?? undefined,
           embeddedImages: embeddedImages.length > 0 ? embeddedImages : undefined,
+          deliveryEstimate: deliveryEstimate ?? undefined,
           priorTicket: priorTicket.trim() || null,
           inputMode: inputMode ?? "review",
           debateFocusAreas: debateFocusAreas.trim() || null,
@@ -1946,6 +2024,7 @@ export default function ForumTestUI() {
     setPendingEndorsement(null);
     setTokenUsage([]);
     setDissentData(null);
+    setDeliveryEstimate(null);
     setValidationMap({});
     setJiraContext(null);
     setUploadResult(null);
@@ -2353,6 +2432,11 @@ export default function ForumTestUI() {
               </div>
             )}
 
+            {/* Delivery estimate — shown after upload, before impact analysis */}
+            {inputMode === "review" && uploadResult && deliveryEstimate && (
+              <DeliveryEstimateCard estimate={deliveryEstimate} />
+            )}
+
             {/* Jira queue panel — shown in jira mode */}
             {inputMode === "jira" && (
               <JiraInputPanel
@@ -2642,6 +2726,9 @@ export default function ForumTestUI() {
                       }}
                     />
                   )}
+
+                  {/* Delivery Estimate */}
+                  {deliveryEstimate && <DeliveryEstimateCard estimate={deliveryEstimate} />}
 
                   {/* Dissent Analysis */}
                   {dissentData && <DissentPanel data={dissentData} />}

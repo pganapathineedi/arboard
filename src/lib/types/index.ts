@@ -135,6 +135,15 @@ export interface ForumRequest {
   debateFocusAreas?: string;
   docHash?: string;
   embeddedImages?: { name: string; mediaType: string; base64: string }[];
+  deliveryEstimate?: {
+    dimensions: {
+      traditional: { weeks: number; cost: number };
+      aiAugmented: { weeks: number; cost: number };
+      aiNative:    { weeks: number; cost: number };
+    };
+    confidence: { range: number };
+    phases: Array<{ name: string; traditional: number; aiAugmented: number }>;
+  } | null;
 }
 
 // ─── Document Upload ──────────────────────────────────────────────────────────
