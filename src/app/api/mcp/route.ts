@@ -7,6 +7,23 @@ import type { ForumRequest } from '@/lib/types'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-arboard-key',
+}
+
+function addCors(res: NextResponse): NextResponse {
+  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+    res.headers.set(k, v)
+  }
+  return res
+}
+
+export async function OPTIONS(): Promise<NextResponse> {
+  return new NextResponse(null, { status: 200, headers: CORS_HEADERS })
+}
+
 const TOOL_DEFINITIONS = {
   tools: [
     {
@@ -67,6 +84,10 @@ type McpBody = {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  return addCors(await handlePOST(req))
+}
+
+async function handlePOST(req: NextRequest): Promise<NextResponse> {
   const authError = requireApiKey(req)
   if (authError) return authError
 
