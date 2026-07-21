@@ -66,7 +66,7 @@ Specialist agents run sequentially. Each receives the SDD, a domain-specific sys
 | sf-integration | Integration | API design, error recovery |
 | sf-patterns | Architecture patterns | Anti-patterns, technical debt |
 | sf-data | Data architecture | Data model, sharing model |
-| sf-agentforce | Agentforce | Topic design, ETL, escalation, licensing |
+| sf-agentforce | Agentforce | Topic/persona/action design, Testing Center, STDM observability, escalation, Flex Credit |
 | sf-profiles-permissions | Profiles & Permissions | OWD/sharing, FLS, guest user, PSG architecture |
 | sf-judge | Judge | Cross-agent synthesis, binding verdict |
 
@@ -90,7 +90,7 @@ Layer 2 — Domain system prompt
 
 Layer 3 — SI failure pattern library
           Dynamic injection from Supabase `failure_patterns` table
-          97 patterns across 11 namespaces: FP / PERM / APEX / DATA / OMNI /
+          105 patterns across 12 namespaces: FP / AGF / PERM / APEX / DATA / OMNI /
           INT / LWC / DSGN / FLOW / SI — domain-filtered per agent in AgentRunner.ts
 
 Layer 4 — Skill injection (keyword-triggered)
@@ -265,7 +265,7 @@ Supabase session telemetry (sessions + signoffs tables)
 
 | Table | Purpose |
 |---|---|
-| `failure_patterns` | SI failure pattern library — 97 patterns across 11 prefix namespaces. Append-only; IDs referenced in past ADRs. <br><br>**Prefix → agent → seed script** <br>`FP-004–012` → `sf-patterns` (original cross-domain) → legacy `seedEmbeddings.ts` <br>`FP-013–020` → `sf-agentforce` → `seed-agentforce-patterns.ts` <br>`PERM-001–008` → `sf-profiles-permissions` → `seed-perm-patterns.ts` <br>`APEX-001–008` → `sf-apex` → `seed-apex-patterns.ts` <br>`DATA-001–008` → `sf-data` → `seed-data-patterns.ts` <br>`OMNI-001–008` → `sf-omni` → `seed-omni-patterns.ts` <br>`INT-001–008` → `sf-integration` → `seed-integration-patterns.ts` <br>`LWC-001–008` → `sf-lwc` → `seed-lwc-patterns.ts` <br>`DSGN-001–008` → `sf-designer` → `seed-designer-patterns.ts` <br>`FLOW-001–008` → `sf-flow` → `seed-flow-patterns.ts` <br>`SI-001–008` → `sf-patterns` (new cross-domain) → `seed-si-patterns.ts` |
+| `failure_patterns` | SI failure pattern library — 105 patterns across 12 prefix namespaces. Append-only; IDs referenced in past ADRs. <br><br>**Prefix → agent → seed script** <br>`FP-004–012` → `sf-patterns` (original cross-domain) → legacy `seedEmbeddings.ts` <br>`FP-013–020` → `sf-agentforce` → `seed-agentforce-patterns.ts` <br>`AGF-001–008` → `sf-agentforce` → `seed-agentforce-patterns.ts` <br>`PERM-001–008` → `sf-profiles-permissions` → `seed-perm-patterns.ts` <br>`APEX-001–008` → `sf-apex` → `seed-apex-patterns.ts` <br>`DATA-001–008` → `sf-data` → `seed-data-patterns.ts` <br>`OMNI-001–008` → `sf-omni` → `seed-omni-patterns.ts` <br>`INT-001–008` → `sf-integration` → `seed-integration-patterns.ts` <br>`LWC-001–008` → `sf-lwc` → `seed-lwc-patterns.ts` <br>`DSGN-001–008` → `sf-designer` → `seed-designer-patterns.ts` <br>`FLOW-001–008` → `sf-flow` → `seed-flow-patterns.ts` <br>`SI-001–008` → `sf-patterns` (new cross-domain) → `seed-si-patterns.ts` |
 | `grounding_embeddings` | Unified RAG store (voyage-code-3, 1024-dim). content_type values: `skill`, `failure_pattern` (from seedEmbeddings.ts), `org_learning` (from seedOrgLearnings.ts + learnerPersist.ts auto-embed), `jira_adr` (from seedJiraADRs.ts + createADRIssue auto-embed) |
 | `org_learnings` | Cross-session learnings captured by sf-learner — source of truth; embeddings mirrored into grounding_embeddings |
 | `sessions` | Session telemetry — tokens, cost, duration, model, agent count |
@@ -318,11 +318,11 @@ scripts/seed-perm-patterns.ts       — PERM-001–PERM-008 (Profiles & Permissi
          ↓ grounding_embeddings (content_type: failure_pattern, source_id: PERM-00X)
   Run: npm run seed:perm-patterns
 
-scripts/seed-agentforce-patterns.ts — FP-013–FP-020 (Agentforce patterns)
+scripts/seed-agentforce-patterns.ts — FP-013–FP-020 + AGF-001–AGF-008 (Agentforce failure patterns)
   agentforceFailurePatterns[]
          ↓ upsert → failure_patterns (onConflict: id)
          ↓ Voyage AI voyage-code-3 (title + scenario + better_path combined)
-         ↓ grounding_embeddings (content_type: failure_pattern, source_id: FP-0XX)
+         ↓ grounding_embeddings (content_type: failure_pattern, source_id: FP-0XX | AGF-00X)
   Run: npm run seed:agentforce-patterns
 
 scripts/seed-apex-patterns.ts       — APEX-001–APEX-008 (Apex patterns, sf-apex)
@@ -491,4 +491,4 @@ MCP.md                           — MCP integration guide: Claude Desktop, Clau
 
 ---
 
-*Last updated: July 2026 — AI Delivery Estimator integration (ForumOrchestrator estimator call, DeliveryEstimateCard UI, ESTIMATOR_URL + ESTIMATOR_API_KEY env vars); ADR-011 (HTTP MCP server, src/app/api/mcp/route.ts, mcp-config.json, MCP.md); ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration; full grounding library — 97 failure patterns across 11 namespaces (APEX, DATA, OMNI, INT, LWC, DSGN, FLOW, SI added); enriched skill files for all 10 domain agents; expanded agentManifest.json keywords for sf-lwc, sf-designer, sf-flow, sf-patterns; seed scripts: seed-apex/data/omni/integration/lwc/designer/flow/si-patterns.ts*
+*Last updated: July 2026 — Agentforce skill enrichment: 7 new sections in src/skills/domains/agentforce.md (Agent Script/FSM, persona design, Testing Center, STDM observability, Agentforce Grid, ADLC safety review, Flex Credit); seed-agentforce-patterns.ts extended with AGF-001–AGF-008 (idempotent actions, persona, Testing Center, STDM, Flex Credit, deliberation budget) + FP-013–020 enriched; failure_patterns now 105 patterns across 12 namespaces (AGF prefix added); agentManifest.json sf-agentforce keywords expanded (+22: Agent Script, STDM, Testing Center, Flex Credit, FSM, persona, RAG, ADL, etc.); AI Delivery Estimator integration (ForumOrchestrator estimator call, DeliveryEstimateCard UI, ESTIMATOR_URL + ESTIMATOR_API_KEY env vars); ADR-011 (HTTP MCP server, src/app/api/mcp/route.ts, mcp-config.json, MCP.md); ADR-010 (LLM abstraction layer, src/lib/llm/); AgentRunner, ImpactAnalyser, ForumOrchestrator, DocumentChunker migrated to getLLMProvider(); keywords field name corrected (was skillKeywords); ADR-009 (Jira queue / Goals pipeline); goals table + label lifecycle; API routes section; forum component structure; Jira /search/jql migration; full grounding library — 97 failure patterns across 11 namespaces (APEX, DATA, OMNI, INT, LWC, DSGN, FLOW, SI added); enriched skill files for all 10 domain agents; expanded agentManifest.json keywords for sf-lwc, sf-designer, sf-flow, sf-patterns; seed scripts: seed-apex/data/omni/integration/lwc/designer/flow/si-patterns.ts*

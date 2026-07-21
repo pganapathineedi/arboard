@@ -16,9 +16,9 @@ const agentforceFailurePatterns = [
     id: "FP-013",
     title: "Over-broad topic scope",
     scenario:
-      "Topic instructions are written too broadly, allowing the agent to accept inputs and invoke actions outside the intended domain. An agent topic designed for customer service accepts any input and attempts to invoke billing, technical support, and account management actions without guardrails, producing unpredictable responses.",
+      "Topic instructions are written too broadly, allowing the agent to accept inputs and invoke actions outside the intended domain. An agent topic designed for customer service accepts any input and attempts to invoke billing, technical support, and account management actions without guardrails, producing unpredictable responses. In Agent Builder trace output, action selection confidence scores reveal the topic is routing inputs to unintended actions — but this signal is only visible when traces are reviewed during testing. In production, STDM session data shows elevated topic misclassification rates, but without STDM enabled, no signal reaches the team until users report degraded answers.",
     better_path:
-      "Write topic instructions with explicit scope boundaries — state what the topic handles AND what it does not handle. Use an exclusion list in the topic instruction. Create a routing topic to direct off-topic requests rather than letting the primary topic attempt resolution.",
+      "Write topic instructions with explicit scope boundaries — state what the topic handles AND what it does not handle. Use an exclusion list in the topic instruction. Create a routing topic to direct off-topic requests rather than letting the primary topic attempt resolution. In Testing Center, add out-of-scope test cases for every adjacent topic — verify the routing topic classifies them correctly before go-live. Monitor STDM topic activation logs post-deployment: if topic misclassification rate exceeds 5% of sessions, trigger a topic instruction revision.",
     severity: "high",
     components: ["AgentTopic", "Agentforce"],
     tags: ["agentforce", "topic-design", "scope", "sf-agentforce"],
@@ -64,9 +64,9 @@ const agentforceFailurePatterns = [
     id: "FP-017",
     title: "Action catalogue bloat",
     scenario:
-      "A single Agentforce topic has more than 5–8 actions assigned. The LLM must select from too large an action set, leading to incorrect action selection, missed invocations, and inconsistent agent behaviour across varied user inputs. Degrades in production as more actions are added over time.",
+      "A single Agentforce topic has more than 5–8 actions assigned. The LLM must select from too large an action set, leading to incorrect action selection, missed invocations, and inconsistent agent behaviour across varied user inputs. In Builder trace output, action selection confidence scores show near-tied rankings across multiple actions — a direct signal of overlapping descriptions. Degrades in production as more actions are added over time without corresponding adversarial testing.",
     better_path:
-      "Limit topics to 5 actions maximum. If a topic requires more, split it into focused sub-topics with clearly scoped mandates. Each action's description must be distinct and unambiguous — overlapping descriptions are the primary cause of LLM selection errors. Review action descriptions with adversarial test inputs.",
+      "Limit topics to 5 actions maximum. If a topic requires more, split it into focused sub-topics with clearly scoped mandates. Each action's description must be distinct and unambiguous — overlapping descriptions are the primary cause of LLM selection errors. After splitting, review Builder trace action selection rankings: descriptions are well-separated when no two actions score within 10% of each other. Run Testing Center adversarial test cases to confirm action selection accuracy improves after the split.",
     severity: "medium",
     components: ["AgentTopic", "AgentAction", "Agentforce"],
     tags: ["agentforce", "topic-design", "action-catalogue", "sf-agentforce"],
@@ -76,9 +76,9 @@ const agentforceFailurePatterns = [
     id: "FP-018",
     title: "Missing audit trail configuration",
     scenario:
-      "Agentforce agents are deployed without Einstein Trust Layer audit logging enabled. There is no forensic record of agent inputs, outputs, actions invoked, or data accessed. Compliance reporting, incident investigation, and debugging are impossible without this record.",
+      "Agentforce agents are deployed without Einstein Trust Layer audit logging enabled and without the Session Trace Data Model (STDM) configured. There is no forensic record of agent inputs, outputs, actions invoked, data accessed, topic activation sequences, or session completion status. Compliance reporting, incident investigation, topic drift detection, and post-go-live debugging are all impossible without this record.",
     better_path:
-      "Enable Einstein Trust Layer audit logging for all Agentforce agents, mandatory in regulated industries. Define log retention policy aligned with compliance requirements. Confirm logs capture: user input, agent response, every action invoked, data fields accessed, and session metadata. Include audit log review in go-live checklist.",
+      "Enable Einstein Trust Layer audit logging and STDM for all Agentforce agents before go-live — both are mandatory in regulated industries. Audit logging captures content compliance (what was said, what data was accessed); STDM captures operational behaviour (topic activation sequence, deliberation turn counts, session completion status). Define log retention policy aligned with compliance requirements. Confirm audit logs capture: user input, agent response, every action invoked, and data fields accessed. Include both configurations in the go-live checklist.",
     severity: "high",
     components: ["EinsteinTrustLayer", "Agentforce"],
     tags: ["agentforce", "audit", "compliance", "observability", "sf-agentforce"],
@@ -88,9 +88,9 @@ const agentforceFailurePatterns = [
     id: "FP-019",
     title: "Edition and licensing mismatch",
     scenario:
-      "The SDD assumes Agentforce features — Agent Studio, Einstein Copilot, Agentforce for Service or Sales, Data Cloud grounding, or specific Einstein Trust Layer capabilities — that are not available in the client's licensed Salesforce edition or purchased add-on SKUs. Discovered at UAT or go-live.",
+      "The SDD assumes Agentforce features — Agent Studio, Einstein Copilot, Agentforce for Service or Sales, Data Cloud grounding, or specific Einstein Trust Layer capabilities — that are not available in the client's licensed Salesforce edition or purchased add-on SKUs. Additionally, Flex Credit consumption is not estimated, meaning the client's monthly credit allocation may be depleted before month-end once the agent goes live at full volume. Both issues are discovered at UAT or go-live.",
     better_path:
-      "Verify every Agentforce feature used against the client's current edition and active SKUs before starting design. Agentforce is add-on based and heavily edition-gated — do not assume availability. Document licensing assumptions explicitly in the SDD and obtain written confirmation from the client before the design is approved.",
+      "Verify every Agentforce feature used against the client's current edition and active SKUs before starting design. Agentforce is add-on based and heavily edition-gated — do not assume availability. Complete the Flex Credit estimation in the Agentforce Grid workbook: monthly conversation volume × credits per conversation, with a 30% first-month buffer. Document all licensing assumptions explicitly in the SDD and obtain written confirmation from the client before the design is approved.",
     severity: "high",
     components: ["Agentforce", "Licensing"],
     tags: ["agentforce", "licensing", "edition", "sf-agentforce"],
@@ -106,6 +106,102 @@ const agentforceFailurePatterns = [
     severity: "high",
     components: ["AgentAction", "Agentforce"],
     tags: ["agentforce", "confirmation-gates", "security", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-001",
+    title: "Agent topic scope too broad — precision degradation",
+    scenario:
+      "An Agentforce topic instruction does not include an explicit exclusion list. As a result, the LLM classifies user inputs from adjacent topics into this topic — an account lookup topic begins receiving billing queries, a scheduling topic begins handling complaints. In STDM session traces, topic misclassification events accumulate, but without STDM enabled, no signal reaches the development team until users report degraded answers. Precision drops gradually as the agent is used across a wider user population with more varied phrasing.",
+    better_path:
+      "Write topic instructions with a three-part structure: what the topic handles, what it explicitly does NOT handle, and how to route out-of-scope requests. Monitor STDM topic activation logs post-deployment — if a topic's misclassification rate exceeds 5% of sessions, trigger a topic instruction revision. In Testing Center, add out-of-scope test cases for every adjacent topic to catch misclassification before go-live.",
+    severity: "medium",
+    components: ["AgentTopic", "Agentforce"],
+    tags: ["agentforce", "topic-design", "scope", "precision", "STDM", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-002",
+    title: "No escalation path — silent session termination",
+    scenario:
+      "An Agentforce agent has no escalation action and no fallback topic. When a user request is out of scope, the deliberation loop exhausts its budget retrying the same intent classification, then terminates the session with a generic error. The user has no next step and the session shows as an unresolved termination in STDM. Support teams have no visibility into how frequently this occurs because STDM is not enabled. High-value users who hit this are not redirected to a human agent and the organisation has no record of the failed session.",
+    better_path:
+      "Define a fallback topic and at least one escalation action before build begins. The escalation action must pass the full conversation context to the receiving queue or agent. Configure STDM to flag sessions that end without a clean resolution status — use this as an operational health metric. In Testing Center, include at least one test case per topic that triggers escalation and verify the context handover payload is complete.",
+    severity: "high",
+    components: ["AgentTopic", "Agentforce"],
+    tags: ["agentforce", "escalation", "human-in-the-loop", "fallback", "STDM", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-003",
+    title: "Agent action not idempotent — duplicate execution on retry",
+    scenario:
+      "An Agentforce action that creates a case, sends an email, processes a refund, or inserts a record is invoked twice in the same session because the agent retries on a timeout or the user re-submits the same request in a follow-up message. The action has no idempotency check — no deduplication key, no record existence check before insert. The result is duplicate cases, double emails to customers, or double-processed payments.",
+    better_path:
+      "Design all state-mutating Agentforce actions to be idempotent. Before executing a create or send operation, check whether an equivalent operation has already been performed in this session using a session-scoped correlation key or a record existence check. For payment and financial actions, implement idempotency at the external system level, not just at the Salesforce layer. Document the idempotency mechanism in the Action Register in the Agentforce Grid workbook.",
+    severity: "high",
+    components: ["AgentAction", "Agentforce"],
+    tags: ["agentforce", "idempotent-action", "duplicate", "action-design", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-004",
+    title: "Persona not defined — inconsistent tone breaks user trust",
+    scenario:
+      "An Agentforce agent is built without a defined persona document. Individual topics are configured by different developers with different tone styles — one uses formal language, another is casual, a third uses terse bullet points. In production, users experience a disjointed agent that feels unreliable. In escalation scenarios, the agent uses clinical error language while the rest of the session was warm and supportive. User trust and CSAT scores fall below baseline.",
+    better_path:
+      "Define the agent persona — name, role, tone, authority boundary, and prohibited behaviours — before any topic configuration begins. Store the persona definition in the Agentforce Grid workbook. Reference the persona in every topic instruction. Test tone consistency across session types in Testing Center: happy path, error state, escalation, and out-of-scope handling. The escalation handover message must match the agent's established voice.",
+    severity: "medium",
+    components: ["Agentforce", "AgentTopic"],
+    tags: ["agentforce", "persona", "tone", "trust", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-005",
+    title: "No Testing Center spec — agent shipped without structured test coverage",
+    scenario:
+      "An Agentforce agent is shipped with only manual ad-hoc testing performed by the developer in the Builder chat window. No Testing Center YAML specs are written and there is no regression test suite. When topic instructions or action descriptions are modified post-go-live to fix user-reported issues, new failures are introduced in previously working paths that are not detected until users report them again. The team has no automated way to confirm the agent behaves correctly after any configuration change.",
+    better_path:
+      "Write Testing Center YAML test specifications before build begins — treat them as the agent's acceptance criteria. Minimum coverage: 3 happy-path cases per topic, 2 out-of-scope cases per topic, and 2 adversarial cases per agent. Store specs in version control alongside the agent configuration export. Run the full test suite against every configuration change before promoting to production. Add all user-reported failing inputs as permanent regression test cases.",
+    severity: "high",
+    components: ["Agentforce", "AgentTopic", "AgentAction"],
+    tags: ["agentforce", "Testing Center", "test-coverage", "regression", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-006",
+    title: "STDM observability not enabled — no session trace visibility in production",
+    scenario:
+      "An Agentforce agent is deployed without enabling the Session Trace Data Model (STDM). In production, the team has no visibility into topic misclassification rates, action invocation failures, escalation frequency, deliberation budget consumption, or unexplained session terminations. When users report degraded answers or session drops, there is no forensic data to diagnose the root cause. Issues compound silently until a critical failure occurs that cannot be diagnosed without historical trace data.",
+    better_path:
+      "Enable STDM for every Agentforce agent before go-live as a non-negotiable gate. Define operational monitoring dashboards using STDM output: track topic misclassification rate, session completion rate, escalation rate, and average deliberation turn count per session. Set alert thresholds: misclassification >5%, session failure rate >2%, deliberation turns >8 in more than 10% of sessions. Include STDM configuration in the go-live checklist alongside audit logging.",
+    severity: "high",
+    components: ["Agentforce", "EinsteinTrustLayer"],
+    tags: ["agentforce", "STDM", "observability", "session-trace", "monitoring", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-007",
+    title: "Flex Credit not estimated — licensing cost unknown at design sign-off",
+    scenario:
+      "An Agentforce implementation is designed and built without estimating Flex Credit consumption. The agent design includes multi-turn conversations, autonomous task completion for high-value actions, and high monthly session volume. The client has a fixed Flex Credit allocation. At go-live, actual credit consumption depletes the monthly allocation within the first 10 days. The agent is throttled or disabled, causing a production incident and a licence renegotiation with Salesforce that delays return-to-service by weeks.",
+    better_path:
+      "Estimate Flex Credit consumption as part of the design phase before the architecture is finalised. Use the Agentforce Grid workbook Licensing worksheet: document monthly conversation volume forecast, expected deflection rate, average turns per conversation, and credits per conversation type. Apply a 30% buffer for first-month volume spikes. Obtain written confirmation from the Salesforce AE of the credit allocation and overage policy before design sign-off. If the estimate exceeds the allocation, redesign the agent scope before build begins.",
+    severity: "high",
+    components: ["Agentforce", "Licensing"],
+    tags: ["agentforce", "Flex Credit", "licensing", "cost-model", "sf-agentforce"],
+    source: "sf-agentforce",
+  },
+  {
+    id: "AGF-008",
+    title: "Agent Script subagent count exceeds deliberation budget — Judge timeout risk",
+    scenario:
+      "An Agent Script or multi-agent pipeline is designed with a high number of subagent calls. Each topic activation, action invocation, and nested subagent call consumes from the session's deliberation budget. A pipeline with 8+ specialist agents, each requiring 2–3 deliberation turns, exhausts the Salesforce-imposed per-session budget mid-flow. The orchestrating agent (Judge or equivalent) times out before producing a synthesis. This pattern was observed in ARBoard's own 13-agent pipeline, which exceeds the Claude Desktop MCP timeout under synchronous execution — an async/polling architecture is the pending resolution per ARCHITECTURE.md.",
+    better_path:
+      "Count deliberation turns during design, not after build. For each agent in the pipeline, estimate turns per topic activation and per action call, and identify the critical path. Reduce pipeline depth by merging low-value specialist agents or parallelising independent agents where the platform supports it. For pipelines that genuinely require more turns than the synchronous budget allows, implement an async/polling pattern: trigger the pipeline asynchronously, poll for completion, and return results when available. Document the deliberation budget analysis in the Agentforce Grid workbook as a go-live gate.",
+    severity: "high",
+    components: ["Agentforce", "AgentScript", "AgentTopic"],
+    tags: ["agentforce", "subagent", "deliberation-budget", "FSM", "timeout", "sf-agentforce"],
     source: "sf-agentforce",
   },
 ];

@@ -150,7 +150,13 @@
       "keywords": [
         "Agentforce", "Einstein Copilot", "Agent Studio", "Agent Builder",
         "Einstein Trust Layer", "Copilot Action", "Agent Action", "Agent Topic",
-        "Prompt Template", "Prompt Builder", "Agentforce for Service", "Agentforce for Sales"
+        "Prompt Template", "Prompt Builder", "Agentforce for Service", "Agentforce for Sales",
+        "Agent Script", "topic design", "action design", "persona",
+        "Testing Center", "STDM", "session trace", "observability",
+        "Flex Credit", "topic scope", "escalation", "idempotent action",
+        "subagent", "FSM", "agentforce-adlc", "safety review",
+        "data mask", "Trust Layer grounding", "retrieval augmented generation",
+        "RAG", "knowledge base", "Agentforce Data Library", "ADL"
       ],
       "enabled": true
     },
