@@ -14,6 +14,8 @@ import { fetchTicket } from "@/lib/integrations/jira";
 import { loadDomainSkill, loadCrossCuttingSkills } from "@/lib/skills/skillLoader";
 import { SessionTracer } from '@/lib/tracing/SessionTracer'
 import { validateAgentOutput, type ValidationResult } from '@/lib/validation/agentOutputSchema'
+import { LeanSynthesiser } from './LeanSynthesiser'
+import type { DomainSignal, LeanReviewResponse } from './LeanSynthesiser'
 
 // ── Delivery Estimator types & helpers ────────────────────────────────────────
 
@@ -786,6 +788,221 @@ ${agentOutputsText}`,
     }
 
     yield `data: ${JSON.stringify({ type: "session_complete", sessionId })}\n\n`;
+  }
+
+  // ── Lean forum: fast parallel review without judge/scribe ────────────────────
+  static async *streamLeanForum(
+    document: string,
+    mode: 'real' | 'mock' = 'real',
+  ): AsyncGenerator<string> {
+    const sessionId = randomUUID()
+    const startTimeMs = Date.now()
+
+    yield `data: ${JSON.stringify({ type: 'session_start', sessionId, lean: true })}\n\n`
+
+    if (mode === 'mock') {
+      const mockResult: LeanReviewResponse = {
+        mode: 'lean',
+        complexity_tier: 'moderate',
+        risk_register: [
+          { id: 'R-001', title: 'Governor limit risk on bulk triggers', severity: 'HIGH', domain: 'sf-apex', effort_impact: 'Requires trigger handler refactor' },
+          { id: 'R-002', title: 'Missing retry strategy for integration callouts', severity: 'MEDIUM', domain: 'sf-integration', effort_impact: 'Additional error handling effort' },
+        ],
+        effort_flags: ['External integration untested at volume', 'LDV implications unclear'],
+        domain_signals: {
+          'sf-apex': { risk_level: 'HIGH', key_concerns: ['Bulkification gaps', 'Missing async patterns'], effort_impact: 'Medium-high' },
+          'sf-integration': { risk_level: 'MEDIUM', key_concerns: ['No dead-letter strategy'], effort_impact: 'Medium' },
+        },
+        agents_activated: ['sf-designer', 'sf-apex', 'sf-integration'],
+        confidence: 0.8,
+        processing_time_ms: Date.now() - startTimeMs,
+      }
+      yield `data: ${JSON.stringify({ type: 'lean_result', result: mockResult })}\n\n`
+      yield `data: ${JSON.stringify({ type: 'session_complete', sessionId })}\n\n`
+      return
+    }
+
+    const LEAN_TIMEOUT_MS = 30_000
+    const LEAN_EXCLUDE = new Set(['sf-judge', 'sf-scribe', 'sf-learner'])
+    const MAX_LEAN_SPECIALISTS = 4
+    const PRIORITY_SCORE: Record<string, number> = { required: 1.0, recommended: 0.6, optional: 0.2 }
+    const SCORE_THRESHOLD = 0.3
+
+    const deadline = startTimeMs + LEAN_TIMEOUT_MS
+    function remainingMs(): number {
+      return Math.max(deadline - Date.now(), 1_000)
+    }
+    function withDeadline<T>(p: Promise<T>): Promise<T> {
+      return Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Lean forum: 30s timeout exceeded')), remainingMs()),
+        ),
+      ])
+    }
+
+    const domain = getDomain('salesforce')
+    const agentById = new Map(domain.agents.map(a => [a.id, a]))
+
+    // ── 1. Impact Analysis ──────────────────────────────────────────────────
+    let analysis: Awaited<ReturnType<typeof ImpactAnalyser.analyse>>
+    try {
+      analysis = await withDeadline(ImpactAnalyser.analyse(document, 'salesforce', undefined, 'real'))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      yield `data: ${JSON.stringify({ type: 'error', error: 'Impact analysis failed', detail: msg })}\n\n`
+      yield `data: ${JSON.stringify({ type: 'session_complete', sessionId })}\n\n`
+      return
+    }
+
+    // ── 2. Agent selection ─────────────────────────────────────────────────
+    const selectedSpecialists = analysis.activatedAgents
+      .filter(a => !LEAN_EXCLUDE.has(a.agentId) && a.agentId !== DESIGNER_ID)
+      .filter(a => (PRIORITY_SCORE[a.priority] ?? 0) > SCORE_THRESHOLD)
+      .slice(0, MAX_LEAN_SPECIALISTS)
+      .map(a => agentById.get(a.agentId))
+      .filter((a): a is NonNullable<typeof a> => Boolean(a))
+
+    const designerConfig = agentById.get(DESIGNER_ID)
+    if (!designerConfig) {
+      yield `data: ${JSON.stringify({ type: 'error', error: 'sf-designer not found in domain' })}\n\n`
+      yield `data: ${JSON.stringify({ type: 'session_complete', sessionId })}\n\n`
+      return
+    }
+
+    const agentsActivated = [DESIGNER_ID, ...selectedSpecialists.map(a => a.id)]
+
+    // ── 3. sf-designer (sequential, first) ────────────────────────────────
+    yield `data: ${JSON.stringify({ type: 'agent_start', agentId: DESIGNER_ID, agentName: designerConfig.name, role: designerConfig.role })}\n\n`
+    const designerStart = Date.now()
+
+    const leanDesignerSystem = [
+      designerConfig.sections.persona,
+      designerConfig.sections.expertise,
+      designerConfig.sections.guardrails,
+    ].filter(Boolean).join('\n\n')
+
+    let designerOutput = ''
+    try {
+      const result = await withDeadline(
+        getLLMProvider().complete({
+          model: 'claude-haiku-4-5-20251001',
+          maxTokens: 1000,
+          system: leanDesignerSystem,
+          messages: [{
+            role: 'user',
+            content: [
+              '## DOCUMENT UNDER REVIEW',
+              document,
+              '',
+              'Provide a concise design assessment (300-500 words) covering:',
+              '- Key architectural decisions and their risks',
+              '- Top 3 risks with severity (CRITICAL/HIGH/MEDIUM/LOW)',
+              '- Complexity and delivery effort estimate',
+              'Be brief — parallel specialist review follows.',
+            ].join('\n'),
+          }],
+        }),
+      )
+      designerOutput = result.text
+      yield `data: ${JSON.stringify({ type: 'agent_complete', agentId: DESIGNER_ID, durationMs: Date.now() - designerStart })}\n\n`
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      yield `data: ${JSON.stringify({ type: 'agent_error', agentId: DESIGNER_ID, error: msg, durationMs: Date.now() - designerStart })}\n\n`
+      designerOutput = '(Designer assessment unavailable)'
+    }
+
+    // ── 4. Specialists in PARALLEL ─────────────────────────────────────────
+    for (const spec of selectedSpecialists) {
+      yield `data: ${JSON.stringify({ type: 'agent_start', agentId: spec.id, agentName: spec.name, role: spec.role })}\n\n`
+    }
+
+    const specStart = Date.now()
+    const specialistResults = await Promise.allSettled(
+      selectedSpecialists.map(spec => {
+        const leanSystem = [
+          spec.sections.persona,
+          spec.sections.expertise,
+          spec.sections.guardrails,
+        ].filter(Boolean).join('\n\n')
+
+        const leanPrompt = [
+          '## DOCUMENT UNDER REVIEW',
+          document,
+          '',
+          '## DESIGNER ANALYSIS',
+          designerOutput,
+          '',
+          `Review from your ${spec.role} perspective. Return ONLY valid JSON — no markdown, no explanation:`,
+          '{',
+          '  "risk_level": "CRITICAL|HIGH|MEDIUM|LOW",',
+          '  "key_concerns": ["max 3 one-line concerns"],',
+          '  "effort_impact": "one-line effort impact"',
+          '}',
+        ].join('\n')
+
+        return withDeadline(
+          getLLMProvider().complete({
+            model: 'claude-haiku-4-5-20251001',
+            maxTokens: 400,
+            system: leanSystem,
+            messages: [{ role: 'user', content: leanPrompt }],
+          }),
+        ).then(r => ({ agentId: spec.id, text: r.text }))
+      }),
+    )
+
+    const domainSignals: Record<string, DomainSignal> = {}
+    for (let i = 0; i < selectedSpecialists.length; i++) {
+      const spec = selectedSpecialists[i]
+      const result = specialistResults[i]
+      if (result.status === 'fulfilled') {
+        const raw = (result.value.text ?? '{}').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+        try {
+          const parsed = JSON.parse(raw) as { risk_level?: string; key_concerns?: string[]; effort_impact?: string }
+          domainSignals[spec.id] = {
+            risk_level: (parsed.risk_level ?? 'MEDIUM') as DomainSignal['risk_level'],
+            key_concerns: parsed.key_concerns ?? [],
+            effort_impact: parsed.effort_impact ?? '',
+          }
+        } catch {
+          domainSignals[spec.id] = { risk_level: 'MEDIUM', key_concerns: [], effort_impact: '' }
+        }
+        yield `data: ${JSON.stringify({ type: 'agent_complete', agentId: spec.id, durationMs: Date.now() - specStart })}\n\n`
+      } else {
+        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason)
+        yield `data: ${JSON.stringify({ type: 'agent_error', agentId: spec.id, error: msg, durationMs: Date.now() - specStart })}\n\n`
+      }
+    }
+
+    // ── 5. Synthesise ───────────────────────────────────────────────────────
+    let leanResult: LeanReviewResponse
+    try {
+      leanResult = await withDeadline(
+        LeanSynthesiser.synthesise({ designerOutput, domainSignals, agentsActivated, startTimeMs }),
+      )
+    } catch {
+      leanResult = {
+        mode: 'lean',
+        complexity_tier: 'moderate',
+        risk_register: [],
+        effort_flags: [],
+        domain_signals: domainSignals,
+        agents_activated: agentsActivated,
+        confidence: 0,
+        processing_time_ms: Date.now() - startTimeMs,
+      }
+    }
+
+    yield `data: ${JSON.stringify({ type: 'lean_result', result: leanResult })}\n\n`
+
+    // ── 6. sf-learner fire-and-forget ──────────────────────────────────────
+    const learnerConfig = agentById.get('sf-learner')
+    if (learnerConfig) {
+      void AgentRunner.run(learnerConfig, document, {}, sessionId, 'salesforce', undefined, 'real')
+    }
+
+    yield `data: ${JSON.stringify({ type: 'session_complete', sessionId })}\n\n`
   }
 
   // Flat agent runner used in non-phased fallback

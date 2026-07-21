@@ -166,7 +166,11 @@ Four files in `src/lib/llm/`: `types.ts` (shared request/response types), `LLMPr
 Migrated files: `AgentRunner.ts` (streaming), `ImpactAnalyser.ts`, `ForumOrchestrator.ts` (dissent analysis), `DocumentChunker.ts` (summarisation).
 
 ### ADR-011 — HTTP MCP server at `/api/mcp` (July 2026)
-ARBoard exposes its architecture review capability as a stateless HTTP MCP server. Two tools are available: `review_document` drives `ForumOrchestrator.streamForum` directly (same pipeline as the web UI) and collects the `pending_endorsement` SSE event to assemble a structured verdict response; `get_session` queries the `sessions` + `adrs` Supabase tables to retrieve telemetry and must-fix items for a completed session. Auth: `requireApiKey` middleware (`x-arboard-key` header) — the same key used by the web UI. Client configuration: `mcp-config.json` (project root) and `MCP.md` (setup guide). The server does not maintain state between requests and does not implement SSE transport — callers block until the full pipeline completes (`maxDuration: 300`).
+ARBoard exposes its architecture review capability as a stateless HTTP MCP server. Two tools are available: `review_document` drives `ForumOrchestrator.streamForum` (full mode) or `ForumOrchestrator.streamLeanForum` (lean mode) and collects the `pending_endorsement` or `lean_result` SSE event respectively; `get_session` queries the `sessions` + `adrs` Supabase tables to retrieve telemetry and must-fix items for a completed session. Auth: `requireApiKey` middleware (`x-arboard-key` header) — the same key used by the web UI. Client configuration: `mcp-config.json` (project root) and `MCP.md` (setup guide). The server does not maintain state between requests and does not implement SSE transport — callers block until the full pipeline completes (`maxDuration: 300`).
+
+`review_document` accepts an optional `review_mode` parameter (`"full"` | `"lean"`, default `"full"`):
+- **full** — complete multi-agent deliberation: sf-designer → domain specialists (sequential) → sf-judge → sf-scribe → sf-learner → dissent analysis → ADR save. Returns verdict, confidence, must-fix items.
+- **lean** — fast parallel review: ImpactAnalyser selects specialists scoring above 0.3 threshold (required/recommended priority), caps at 4 domain specialists, always includes sf-designer. sf-designer runs first (Haiku), then activated specialists run in **parallel** (Promise.all, Haiku). Outputs passed to `LeanSynthesiser` (Sonnet) which returns a structured `LeanReviewResponse`. sf-learner fires as fire-and-forget. Hard timeout: 30 seconds via AbortController-style deadline. sf-judge and sf-scribe are excluded from the hot path — no ADR is created. Implemented in `ForumOrchestrator.streamLeanForum()` and `src/lib/orchestrator/LeanSynthesiser.ts`.
 
 ### ADR-009 — Jira Review Queue input mode and Goals pipeline (July 2026)
 A fourth input mode (`"jira"`) allows ARBoard to pull Jira tickets labelled `submitted-for-review` from the ARBOARD project and run them through the full agent pipeline without manual SDD upload. The `GoalOrchestrator` manages the lifecycle: on trigger, it creates a row in the `goals` Supabase table, updates the Jira label to `arb-review-in-progress`, runs the forum pipeline, then sets the label to `arb-reviewed` (or `arb-review-failed` on error). A partial unique index on `goals` prevents duplicate concurrent goals for the same Jira issue. The Jira search API is called via `/rest/api/3/search/jql` (migrated from the legacy `/rest/api/3/search` endpoint).
@@ -408,6 +412,7 @@ src/
       types.ts                   — LLMMessage, LLMCompleteRequest, LLMStreamRequest, LLMUsage, etc.
     orchestrator/
       ForumOrchestrator.ts       — main session orchestration, grounding assembly
+      LeanSynthesiser.ts         — lean mode: Sonnet synthesiser; LeanReviewResponse type; complexity tier derivation
     agents/
       AgentRunner.ts             — per-agent execution, failure pattern injection, prompt caching
     auth/

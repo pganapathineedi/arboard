@@ -30,6 +30,12 @@ const TOOL_DEFINITIONS = {
             description: 'real = live Claude agents, mock = fast test mode',
             default: 'real',
           },
+          review_mode: {
+            type: 'string',
+            enum: ['full', 'lean'],
+            description: 'full = complete multi-agent deliberation with judge/scribe/ADR (default); lean = fast parallel review without judge/scribe, returns structured risk register in ~30s',
+            default: 'full',
+          },
         },
         required: ['content'],
       },
@@ -100,6 +106,11 @@ async function callReviewDocument(args: Record<string, unknown>): Promise<NextRe
   }
 
   const mode = (args.mode as 'real' | 'mock' | undefined) ?? 'real'
+  const reviewMode = (args.review_mode as 'full' | 'lean' | undefined) ?? 'full'
+
+  if (reviewMode === 'lean') {
+    return callReviewDocumentLean(content, mode)
+  }
 
   const forumRequest: ForumRequest = {
     input: content,
@@ -166,6 +177,43 @@ async function callReviewDocument(args: Record<string, unknown>): Promise<NextRe
         }),
       },
     ],
+  })
+}
+
+async function callReviewDocumentLean(
+  content: string,
+  mode: 'real' | 'mock',
+): Promise<NextResponse> {
+  let leanResult: Record<string, unknown> | null = null
+
+  try {
+    for await (const chunk of ForumOrchestrator.streamLeanForum(content, mode)) {
+      const lines = chunk.split('\n')
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const event = JSON.parse(line.slice(6)) as Record<string, unknown>
+          if (event.type === 'lean_result') {
+            leanResult = event.result as Record<string, unknown>
+          }
+        } catch {
+          // skip unparseable SSE lines
+        }
+      }
+    }
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Lean review failed' },
+      { status: 500 },
+    )
+  }
+
+  if (!leanResult) {
+    return NextResponse.json({ error: 'No lean result produced' }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    content: [{ type: 'text', text: JSON.stringify(leanResult) }],
   })
 }
 

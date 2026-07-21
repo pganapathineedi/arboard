@@ -27,6 +27,7 @@ Submit a Salesforce solution design document for multi-agent architecture review
 | `content` | string | Yes | Full text of the solution design document |
 | `requirement` | string | No | Specific requirement or focus area |
 | `mode` | `"real"` \| `"mock"` | No | `real` = live Claude agents (default), `mock` = fast test mode |
+| `review_mode` | `"full"` \| `"lean"` | No | `full` = complete multi-agent deliberation with judge/scribe/ADR (default); `lean` = fast parallel review, see below |
 
 **Output**
 
@@ -40,6 +41,88 @@ Submit a Salesforce solution design document for multi-agent architecture review
 ```
 
 Verdict values: `APPROVED`, `APPROVE_WITH_CONDITIONS`, `REJECT`, `REVIEW_REQUIRED`
+
+---
+
+### Lean Mode (`review_mode: "lean"`)
+
+Lean mode runs a fast parallel review optimised for early-stage feasibility checks. It skips `sf-judge`, `sf-scribe`, and ADR creation, returning a structured risk register in approximately 30 seconds.
+
+**When to use lean vs full**
+
+| | `full` | `lean` |
+|---|---|---|
+| Use case | Formal ARB review, gating decision | Early feasibility, quick risk triage |
+| Agents | All activated specialists + judge + scribe | sf-designer + ≤4 domain specialists |
+| Output | Verdict, ADR, must-fix items, dissent | Risk register, effort flags, domain signals |
+| Time | 3–8 minutes | ~30 seconds |
+| ADR created | Yes (in Jira after endorsement) | No |
+| sf-learner | Yes (sequential) | Yes (fire-and-forget) |
+
+**Lean output shape (`LeanReviewResponse`)**
+
+```json
+{
+  "mode": "lean",
+  "complexity_tier": "simple|moderate|complex|highly_complex",
+  "risk_register": [
+    {
+      "id": "R-001",
+      "title": "Governor limit risk on bulk triggers",
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "domain": "sf-apex",
+      "effort_impact": "Requires trigger handler refactor"
+    }
+  ],
+  "effort_flags": ["External integration untested at volume"],
+  "domain_signals": {
+    "sf-apex": {
+      "risk_level": "HIGH",
+      "key_concerns": ["Bulkification gaps", "Missing async patterns"],
+      "effort_impact": "Medium-high"
+    }
+  },
+  "agents_activated": ["sf-designer", "sf-apex", "sf-integration"],
+  "confidence": 0.85,
+  "processing_time_ms": 18500
+}
+```
+
+**Complexity tier derivation**
+
+| Tier | Condition |
+|---|---|
+| `simple` | 0–1 specialists, no CRITICAL/HIGH |
+| `moderate` | 2 specialists OR any HIGH |
+| `complex` | 3 specialists OR any CRITICAL OR 3+ HIGH |
+| `highly_complex` | 4 specialists OR 2+ CRITICAL OR cross-domain CRITICAL |
+
+**Example lean request**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "review_document",
+    "arguments": {
+      "content": "...",
+      "mode": "real",
+      "review_mode": "lean"
+    }
+  }
+}
+```
+
+**Example lean response**
+
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "{\"mode\":\"lean\",\"complexity_tier\":\"complex\",\"risk_register\":[...],\"effort_flags\":[...],\"domain_signals\":{...},\"agents_activated\":[\"sf-designer\",\"sf-apex\",\"sf-integration\",\"sf-data\"],\"confidence\":0.82,\"processing_time_ms\":24100}"
+  }]
+}
+```
 
 ---
 
