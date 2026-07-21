@@ -60,7 +60,17 @@
       "name": "Flow Specialist",
       "file": "flow",
       "promptFile": "sf-flow",
-      "keywords": ["Flow", "Process Builder", "automation"],
+      "keywords": [
+        "Flow", "Process Builder", "automation", "record-triggered flow",
+        "screen flow", "auto-launched flow", "scheduled flow",
+        "before save", "after save", "fault connector",
+        "Get Records", "Update Records", "Create Records", "Delete Records",
+        "loop", "subflow", "sub-flow", "flow version", "flow versioning",
+        "order of execution", "flow bulkification", "null check",
+        "flow variable", "flow formula", "assignment element",
+        "decision element", "flow error", "flow limit",
+        "Workflow Rule", "workflow", "flow hygiene", "flow naming"
+      ],
       "enabled": true
     },
     {
@@ -88,7 +98,18 @@
       "name": "Architecture Patterns Specialist",
       "file": "patterns",
       "promptFile": "sf-patterns",
-      "keywords": ["pattern", "anti-pattern", "architecture"],
+      "keywords": [
+        "pattern", "anti-pattern", "architecture", "SI pattern",
+        "delivery pattern", "cross-domain", "automation registry",
+        "governor limit stack", "silent failure", "async failure",
+        "dead letter", "dead-letter queue", "rollback strategy",
+        "mixed automation", "automation stack", "hardcoded ID",
+        "hardcoded config", "data migration runbook", "cutover",
+        "reconciliation", "Agentforce pattern", "prompt injection",
+        "PII exposure", "Trust Layer", "action catalogue",
+        "escalation path", "human in the loop", "security sweep",
+        "FLS sweep", "sharing sweep", "cross-object", "multi-step DML"
+      ],
       "enabled": true
     },
     {

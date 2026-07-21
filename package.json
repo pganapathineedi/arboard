@@ -17,6 +17,8 @@
   "seed:apex-patterns": "npx tsx --env-file=.env.local scripts/seed-apex-patterns.ts",
   "seed:lwc-patterns": "npx tsx --env-file=.env.local scripts/seed-lwc-patterns.ts",
   "seed:designer-patterns": "npx tsx --env-file=.env.local scripts/seed-designer-patterns.ts",
+  "seed:flow-patterns": "npx tsx --env-file=.env.local scripts/seed-flow-patterns.ts",
+  "seed:si-patterns": "npx tsx --env-file=.env.local scripts/seed-si-patterns.ts",
   "build:mcp": "tsc --project tsconfig.mcp.json"
 },
   "dependencies": {
