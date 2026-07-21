@@ -5,7 +5,17 @@
       "name": "Solution Designer",
       "file": "designer",
       "promptFile": "sf-designer",
-      "keywords": ["design", "architecture", "solution"],
+      "keywords": [
+        "design", "architecture", "solution", "Well-Architected",
+        "scalability", "technical debt", "declarative", "programmatic",
+        "multi-org", "multi org", "org strategy", "migration",
+        "integration strategy", "data retention", "archival",
+        "sharing model", "extensibility", "non-functional requirements",
+        "NFR", "capacity", "volume", "future state",
+        "solution fit", "off-platform", "SDD", "solution design",
+        "composable", "adaptable", "trusted", "governor limit design",
+        "cutover", "go-live", "technical debt register"
+      ],
       "enabled": true
     },
     {
@@ -13,7 +23,18 @@
       "name": "LWC Specialist",
       "file": "lwc",
       "promptFile": "sf-lwc",
-      "keywords": ["LWC", "Lightning Web Component", "component"],
+      "keywords": [
+        "LWC", "Lightning Web Component", "component", "wire", "@api",
+        "@track", "@wire", "SLDS", "SLDS2", "styling hook",
+        "accessibility", "Jest", "LMS", "Lightning Message Service",
+        "pub/sub", "renderedCallback", "connectedCallback",
+        "locker service", "shadow DOM", "slot", "composition",
+        "child component", "parent component", "custom event",
+        "NavigationMixin", "wire adapter", "imperative apex",
+        "reactive property", "immutable update", "for:each", "key directive",
+        "lightning web security", "LWS", "aria", "keyboard navigation",
+        "focus management", "WCAG"
+      ],
       "enabled": true
     },
     {
@@ -21,7 +42,17 @@
       "name": "OmniStudio Specialist",
       "file": "omniStudio",
       "promptFile": "sf-omni",
-      "keywords": ["OmniStudio", "FlexCard", "OmniScript", "DataRaptor"],
+      "keywords": [
+        "OmniStudio", "FlexCard", "OmniScript", "DataRaptor",
+        "Integration Procedure", "Callable Apex", "EPC", "Vlocity",
+        "Industries", "managed package", "namespace", "product catalog",
+        "CME", "Communications Cloud", "Health Cloud", "Financial Services Cloud",
+        "cross-channel", "step action", "set values", "navigate",
+        "DataPack", "Vlocity CRM", "Industries Cloud", "product hierarchy",
+        "attribute", "configurator", "IP action", "remote action",
+        "FlexCard action", "OmniScript step", "DataRaptor Extract",
+        "DataRaptor Load", "DataRaptor Transform"
+      ],
       "enabled": true
     },
     {
@@ -37,7 +68,19 @@
       "name": "Apex Specialist",
       "file": "apex",
       "promptFile": "sf-apex",
-      "keywords": ["Apex", "trigger", "batch", "queueable"],
+      "keywords": [
+        "Apex", "trigger", "batch", "queueable", "scheduled", "handler",
+        "bulkification", "governor limit", "governor limits",
+        "WITH SHARING", "without sharing", "inherited sharing",
+        "CRUD", "FLS", "field level security", "stripInaccessible",
+        "fflib", "selector", "domain", "service", "unit of work", "UOW",
+        "test class", "SeeAllData", "testSetup", "test data factory",
+        "platform cache", "org cache", "session cache",
+        "async", "future method", "@future", "invocable", "@InvocableMethod",
+        "Queueable", "Batchable", "Schedulable", "Database.Batchable",
+        "mixed DML", "setup object", "System.runAs",
+        "SOQL in loop", "DML in loop", "hardcoded ID"
+      ],
       "enabled": true
     },
     {
@@ -53,7 +96,14 @@
       "name": "Integration Architect",
       "file": "integration",
       "promptFile": "sf-integration",
-      "keywords": ["integration", "API", "REST", "SOAP", "event", "platform event"],
+      "keywords": [
+        "integration", "API", "REST", "SOAP", "event", "platform event",
+        "callout", "webhook", "Named Credential", "External Service",
+        "MuleSoft", "middleware", "CDC", "Change Data Capture",
+        "OAuth", "idempotency", "retry", "timeout",
+        "outbound message", "ESB", "ETL", "HTTP callout",
+        "connected app", "integration user", "External Services"
+      ],
       "enabled": true
     },
     {
@@ -61,7 +111,14 @@
       "name": "Data Architecture Specialist",
       "file": "data",
       "promptFile": "sf-data",
-      "keywords": ["data model", "object", "field", "schema", "relationship"],
+      "keywords": [
+        "data model", "object", "field", "schema", "relationship",
+        "LDV", "large data volume", "data volume", "SOQL", "indexing",
+        "archival", "data skew", "ownership skew", "lookup skew",
+        "skinny table", "external ID", "Bulk API", "Big Object",
+        "Data Cloud", "ETL", "data migration", "deduplication",
+        "sharing model", "OWD", "data architecture", "data design"
+      ],
       "enabled": true
     },
     {
